@@ -6,6 +6,12 @@ AngularPDController::AngularPDController(float kp, float kd, float threshold1) {
   pd_constants.Kd = kd;
 
   threshold = threshold1;
+
+  last_angular_error = 0.0;
+  last_error_deriv = 0.0;
+  last_command = 0.0;
+  last_pterm = 0.0;
+  last_dterm = 0.0;
 }
 
 float pid_utils_angle_difference(float angle1, float angle2) {
@@ -22,16 +28,22 @@ float AngularPDController::compute_command(float error, float dt) {
   float pterm = pd_constants.Kp*error;
   last_pterm = pterm;
 
-  float angular_deriv = pid_utils_angle_difference(error, last_angular_error) /
-      (dt);
-  last_error_deriv = angular_deriv;
+  if(first_loop) {
+    last_error_deriv = 0.0;
+    first_loop = false;
+  } else {
+    last_error_deriv = pid_utils_angle_difference(error, last_angular_error) /
+        (dt);
+  }
+  
   last_angular_error = error;
 
-  float dterm = pd_constants.Kd*angular_deriv;
+  float dterm = pd_constants.Kd*last_error_deriv;
   last_dterm = dterm;
 
   float command = pterm + dterm;
   last_command = constrain(command,-threshold,threshold);
+
 
   return last_command;
 }

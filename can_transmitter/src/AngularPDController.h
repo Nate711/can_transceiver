@@ -3,6 +3,10 @@
 
 class AngularPDController {
 private:
+  // Stores whether this is fthe first time through, important for initializing
+  // time derivatives
+  bool first_loop = true;
+
   // PID constants
   float Kp,Ki,Kd;
 
@@ -13,8 +17,7 @@ private:
   float last_error;
   float last_error_deriv;
 
-  // stores the last computed command float and last angular error float
-  float last_computed_command;
+  // stores the last angular error float
   float last_angular_error;
 
   // stores the last outputted command

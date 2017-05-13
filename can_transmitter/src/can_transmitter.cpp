@@ -2,23 +2,17 @@
 #include <kinetis_flexcan.h>
 #include "datatypes.h"
 #include "AngularPDController.h"
+#include "constants.h"
 
 #include "buffer.h"
 #include "utils.h"
 
-int led = 13;
 // create CAN object
 FlexCAN CANTransceiver(500000); // default is 500k baud
 static CAN_message_t msg;
 
 unsigned long last_send = micros();
 unsigned long last_print_debug = micros();
-
-// float pid_last_angle = 0;
-// long time_last_angle_read;
-// float last_degps=0;
-
-const float MAX_CURRENT = 3.0;
 
 struct PD_Constants {
 	float Kp;
@@ -30,9 +24,12 @@ struct Motor_State {
 	float last_angle;
 	float last_degps;
 	long time_last_angle_read;
-} tmotor_state;
+} left_tmotor_state,right_tmotor_state;
 
 AngularPDController right_vesc_pid_controller(-0.05,
+																							-0.0005,
+																							1.0);
+AngularPDController left_vesc_pid_controller(-0.05,
 																							-0.0005,
 																							1.0);
 
@@ -65,7 +62,7 @@ int squareWaveCommand(const float& seconds, const int& multiplier, float frequen
  * Check and read rotor angle over CAN
  * Returns true and stores value if message received, otherwise ret false
  **/
-bool readAngleOverCAN(FlexCAN& CANrx, float& last_angle_received) {
+bool readAngleOverCAN(FlexCAN& CANrx, float& last_angle_received, int& transmitter_ID) {
 	// NOTE: will parse thru multiple angles if >1 messages received btn loops
 
 	// keep track if a value was received
@@ -74,6 +71,9 @@ bool readAngleOverCAN(FlexCAN& CANrx, float& last_angle_received) {
 	// parse all available can messages
 	while( CANrx.read(msg)) {
 		read = true;
+
+		// Very useful, this is the ID encoded by the transitting CAN device
+		transmitter_ID = msg.id & 0xFF;
 
     // toggle LEDs
     // digitalWrite(led, !digitalRead(led));
@@ -115,13 +115,13 @@ void sendMultipliedAngleOverCAN(FlexCAN& CANtx, const uint32_t& multiplied_angle
  * Sends current command over CANtx
  * Multiplier is 1000
  **/
-void sendMultipliedCurrentOverCAN(FlexCAN& CANtx, const int32_t& current) {
+void sendMultipliedCurrentOverCAN(FlexCAN& CANtx, const int32_t& current, const int8_t& controller_id) {
 
 	CAN_message_t msg;
 
 	// use a controller ID of 255 (VESC will accept all 255 ID messages)
 	// CAN_PACKET_SET_CURRENT byte goes on the left of the ID byte
-	msg.id = 255 | ((int32_t)CAN_PACKET_SET_CURRENT << 8);
+	msg.id = controller_id | ((int32_t)CAN_PACKET_SET_CURRENT << 8);
 	msg.len = 4; // 4 byte int
 
 	int32_t index=0;
@@ -148,6 +148,13 @@ void sendMultipliedCurrentOverCAN(FlexCAN& CANtx, const int32_t& current) {
 	CANtx.write(msg);
 }
 
+/*
+float current_command = MAX_CURRENT*positionPidControl(last_read_angle,
+		tmotor_state.last_angle,
+		angle_set_point,
+		time_delta,
+		VESC_pd_k);
+*/
 
 // float positionPidControl(const float& angle_now,
 // 	float& angle_last,
@@ -205,6 +212,9 @@ void sendMultipliedCurrentOverCAN(FlexCAN& CANtx, const int32_t& current) {
 // }
 
 void setup() {
+	// init stop button
+	pinMode(e_stop_pin,INPUT_PULLUP);
+
   // init CAN bus
   CANTransceiver.begin();
   pinMode(led, OUTPUT);
@@ -212,19 +222,41 @@ void setup() {
   delay(1000);
   Serial.println("CAN Transmitter Initialized");
 
-	tmotor_state.time_last_angle_read = micros();
+	left_tmotor_state.time_last_angle_read = micros();
+	right_tmotor_state.time_last_angle_read = micros();
+
 
 	// VESC_pd_k.Kp = 0.07;
 	// VESC_pd_k.Kd = 0.0015;
 	VESC_pd_k.Kp = 0.05;
 	VESC_pd_k.Kd = 0.0005;
+
+	// INITIALIZE ALL YOUR THINGS
+	left_tmotor_state.last_angle = 0.0;
+	left_tmotor_state.last_degps = 0.0;
+	left_tmotor_state.time_last_angle_read = micros();
+
+	right_tmotor_state.last_angle = 0.0;
+	right_tmotor_state.last_degps = 0.0;
+	right_tmotor_state.time_last_angle_read = micros();
 }
 
 void print_debug() {
-	if(micros()-last_print_debug > 50*1000) {
+	if(micros()-last_print_debug > 100*1000) {
 		last_print_debug = micros();
 
 		Serial.print("O: ");
+		Serial.print(left_vesc_pid_controller.get_command());
+		Serial.print(" \tEr: ");
+		Serial.print(left_vesc_pid_controller.get_error());
+		Serial.print(" \tw:  ");
+		Serial.print(left_vesc_pid_controller.get_error_deriv());
+		Serial.print(" \tKp: ");
+		Serial.print(left_vesc_pid_controller.get_pterm());
+		Serial.print(" \tKd: ");
+		Serial.print(left_vesc_pid_controller.get_dterm());
+
+		Serial.print("\tO: ");
 		Serial.print(right_vesc_pid_controller.get_command());
 		Serial.print(" \tEr: ");
 		Serial.print(right_vesc_pid_controller.get_error());
@@ -238,51 +270,95 @@ void print_debug() {
 }
 
 void loop() {
+	// Handle the ESTOP behavior: if it has been pressed or is currently pressed
+	// then send a zero current command over to the VESC and delay 10ms
+	if(e_stop_pressed || (digitalReadFast(e_stop_pin) == LOW)) {
+		e_stop_pressed = true;
+		sendMultipliedCurrentOverCAN(CANTransceiver,0,CONTROLLER_ID_FOR_RIGHT_VESC);
+		sendMultipliedCurrentOverCAN(CANTransceiver,0,CONTROLLER_ID_FOR_LEFT_VESC);
+		Serial.println("E-Stop Pressed");
+		delay(200);
+	} else {
 
-	float last_read_angle;
-	if(readAngleOverCAN(CANTransceiver,last_read_angle)) {
-		// Serial.println(last_read_angle);
+		float last_read_angle;
+		int transmitter_ID;
+		if(readAngleOverCAN(CANTransceiver,last_read_angle,transmitter_ID)) {
+			if(transmitter_ID == CONTROLLER_ID_FOR_RIGHT_VESC) {
+				float right_angle = last_read_angle;
 
-		// float angle = continuousRotationCommand(millis()/1000.0, 1000000, 0.5)/1000000.0;
-		// float angle = squareWaveCommand(millis()/1000.0, 1000, 25, 5)/1000.0;
-		float angle_set_point = 180.0;
-		long time_delta = micros() - tmotor_state.time_last_angle_read;
+				// float angle = continuousRotationCommand(millis()/1000.0, 1000000, 0.5)/1000000.0;
+				// float angle = squareWaveCommand(millis()/1000.0, 1000, 25, 5)/1000.0;
+				float angle_set_point = 180.0;
+				long time_delta = micros() - right_tmotor_state.time_last_angle_read;
 
-		/*
-		float current_command = MAX_CURRENT*positionPidControl(last_read_angle,
-				tmotor_state.last_angle,
-				angle_set_point,
-				time_delta,
-				VESC_pd_k);
-	  */
-		float error = utils_angle_difference(last_read_angle, angle_set_point);
-		float current_command = MAX_CURRENT*right_vesc_pid_controller.compute_command(error, time_delta/(1000000.0));
 
-		// SAFETY: set current to zero if ang vel > 1000 degree per second
-		if(abs(right_vesc_pid_controller.get_error_deriv()) > 1000) {
-			current_command = 0.0;
-			// Serial.println("Error: too fast, setting current to 0");
+				float error = utils_angle_difference(right_angle, angle_set_point);
+				float current_command = MAX_CURRENT*right_vesc_pid_controller.compute_command(error, time_delta/(1000000.0));
+
+				// NOT WORKING BC FUCKING GET_ERROR_DERIV
+				// SAFETY: set current to zero if ang vel > 1000 degree per second
+				// long now = micros();
+				float d = right_vesc_pid_controller.get_error_deriv();
+				// long then = micros();
+				// Serial.println(then-now);
+				if(d > MAX_ANGULAR_VEL || d < -MAX_ANGULAR_VEL) {
+					Serial.print("ERROR DERIV: ");
+					Serial.println(d);
+					// e_stop_pressed = true;
+					current_command = 0.0;
+				}
+
+				right_tmotor_state.time_last_angle_read = micros();
+
+				sendMultipliedCurrentOverCAN(CANTransceiver,
+						(int32_t)(current_command * 1000.0),
+						CONTROLLER_ID_FOR_RIGHT_VESC);
+
+				print_debug();
+			}
+			if(transmitter_ID == CONTROLLER_ID_FOR_LEFT_VESC) {
+				float left_angle = last_read_angle;
+
+				// float angle = continuousRotationCommand(millis()/1000.0, 1000000, 0.5)/1000000.0;
+				// float angle = squareWaveCommand(millis()/1000.0, 1000, 25, 5)/1000.0;
+				float angle_set_point = 0.0;
+				long time_delta = micros() - left_tmotor_state.time_last_angle_read;
+
+
+				float error = utils_angle_difference(left_angle, angle_set_point);
+				float current_command = MAX_CURRENT*left_vesc_pid_controller.compute_command(error, time_delta/(1000000.0));
+
+				// NOT WORKING BC FUCKING GET_ERROR_DERIV
+				// SAFETY: set current to zero if ang vel > 1000 degree per second
+				float d = left_vesc_pid_controller.get_error_deriv();
+				if(d > MAX_ANGULAR_VEL || d < -MAX_ANGULAR_VEL) {
+					Serial.print("ERROR DERIV: ");
+					Serial.println(d);
+					// e_stop_pressed = true;
+					current_command = 0.0;
+				}
+
+				left_tmotor_state.time_last_angle_read = micros();
+
+				sendMultipliedCurrentOverCAN(CANTransceiver,
+						(int32_t)(current_command * 1000.0),
+						CONTROLLER_ID_FOR_LEFT_VESC);
+
+				print_debug();
+			}
 		}
 
-		tmotor_state.time_last_angle_read = micros();
+		// operate this loop at 500hz
+		/*
+		if(micros() - last_send > 2*1000) {
+			last_send = micros();
 
-		// sendMultipliedCurrentOverCAN(CANTransceiver,
-			// (int32_t)(current_command * 1000.0));
+			int32_t command = continuousRotationCommand(millis()/1000.0, 1000000, 0.5);
 
-		// Serial.print(millis());
-		// Serial.print(" ");
-		// Serial.println(current_command);
-		print_debug();
-	}
-
-	// operate this loop at 500hz
-
-	if(micros() - last_send > 2*1000) {
-		last_send = micros();
-
-		int32_t command = continuousRotationCommand(millis()/1000.0, 1000000, 0.5);
-
-		sendMultipliedAngleOverCAN(CANTransceiver,command);
+			sendMultipliedAngleOverCAN(CANTransceiver,command);
+			// Serial.println(command/1000000);
+		}
+		*/
 	}
 
 }
