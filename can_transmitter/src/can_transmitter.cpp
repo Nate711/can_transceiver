@@ -1,6 +1,7 @@
 #include <FlexCAN.h>
 #include <kinetis_flexcan.h>
 #include "datatypes.h"
+#include "AngularPDController.h"
 
 #include "buffer.h"
 #include "utils.h"
@@ -11,12 +12,13 @@ FlexCAN CANTransceiver(500000); // default is 500k baud
 static CAN_message_t msg;
 
 unsigned long last_send = micros();
+unsigned long last_print_debug = micros();
 
 // float pid_last_angle = 0;
 // long time_last_angle_read;
 // float last_degps=0;
 
-const float MAX_CURRENT = 10.0;
+const float MAX_CURRENT = 3.0;
 
 struct PD_Constants {
 	float Kp;
@@ -29,6 +31,10 @@ struct Motor_State {
 	float last_degps;
 	long time_last_angle_read;
 } tmotor_state;
+
+AngularPDController right_vesc_pid_controller(-0.05,
+																							-0.0005,
+																							1.0);
 
 /**
 * frequency is in regular freq, not angular freq, so like 1Hz = 1 RPS
@@ -142,60 +148,61 @@ void sendMultipliedCurrentOverCAN(FlexCAN& CANtx, const int32_t& current) {
 	CANtx.write(msg);
 }
 
-float positionPidControl(const float& angle_now,
-	float& angle_last,
-	const float& set_point,
-	const int& microsTimeDelta,
-	const PD_Constants& pd_k) {
 
-	/**
-	* fucking weird error:
-	* if angle_diff defined and calced up here (before error is calced), the vesc freezes up
-	TODO: figure out what the freeze actually is!!
-	*/
-
-	float error = utils_angle_difference(angle_now, set_point);
-	float angle_diff = utils_angle_difference(angle_now, angle_last);
-
-
-	float error_deriv = (angle_diff)*1000000.0 /
-		(float)microsTimeDelta; // deg /s
-
-	// error_deriv = 0.5*error_deriv + 0.5*last_degps;
-	tmotor_state.last_degps = error_deriv;
-
-	angle_last = angle_now;
-
-	// NEGATIVE SIGN IS IMPORTANT
-	float res =  -(error*pd_k.Kp + error_deriv*pd_k.Kd);
-	res = constrain(res, -1.0, 1.0);
-
-	if(micros() - last_send > 50*1000) {
-		last_send = micros();
-
-		Serial.print("O: ");
-		Serial.print(res);
-		Serial.print(" \tEr: ");
-		Serial.print(error);
-		Serial.print(" \tw:  ");
-		Serial.print(error_deriv);
-		Serial.print(" \tKp: ");
-		Serial.print(error*pd_k.Kp);
-		Serial.print(" \tKd: ");
-		Serial.println(error_deriv*pd_k.Kd);
-	}
-
-	/**
-	* sets a zero current if the speed is less than or greater than 100deg/s
-	**/
-	if(abs(error_deriv) > 1000) return 0;
-
-	// if(abs(error) < 1.0) {
-		// res = constrain(res, -0.5, 0.5);
-	// }
-
-	return res;
-}
+// float positionPidControl(const float& angle_now,
+// 	float& angle_last,
+// 	const float& set_point,
+// 	const int& microsTimeDelta,
+// 	const PD_Constants& pd_k) {
+//
+// 	/**
+// 	* fucking weird error:
+// 	* if angle_diff defined and calced up here (before error is calced), the vesc freezes up
+// 	TODO: figure out what the freeze actually is!!
+// 	*/
+//
+// 	float error = utils_angle_difference(angle_now, set_point);
+// 	float angle_diff = utils_angle_difference(angle_now, angle_last);
+//
+//
+// 	float error_deriv = (angle_diff)*1000000.0 /
+// 		(float)microsTimeDelta; // deg /s
+//
+// 	// error_deriv = 0.5*error_deriv + 0.5*last_degps;
+// 	tmotor_state.last_degps = error_deriv;
+//
+// 	angle_last = angle_now;
+//
+// 	// NEGATIVE SIGN IS IMPORTANT
+// 	float res =  -(error*pd_k.Kp + error_deriv*pd_k.Kd);
+// 	res = constrain(res, -1.0, 1.0);
+//
+// 	if(micros() - last_send > 50*1000) {
+// 		last_send = micros();
+//
+// 		Serial.print("O: ");
+// 		Serial.print(res);
+// 		Serial.print(" \tEr: ");
+// 		Serial.print(error);
+// 		Serial.print(" \tw:  ");
+// 		Serial.print(error_deriv);
+// 		Serial.print(" \tKp: ");
+// 		Serial.print(error*pd_k.Kp);
+// 		Serial.print(" \tKd: ");
+// 		Serial.println(error_deriv*pd_k.Kd);
+// 	}
+//
+// 	/**
+// 	* sets a zero current if the speed is less than or greater than 100deg/s
+// 	**/
+// 	if(abs(error_deriv) > 1000) return 0;
+//
+// 	// if(abs(error) < 1.0) {
+// 		// res = constrain(res, -0.5, 0.5);
+// 	// }
+//
+// 	return res;
+// }
 
 void setup() {
   // init CAN bus
@@ -213,6 +220,23 @@ void setup() {
 	VESC_pd_k.Kd = 0.0005;
 }
 
+void print_debug() {
+	if(micros()-last_print_debug > 50*1000) {
+		last_print_debug = micros();
+
+		Serial.print("O: ");
+		Serial.print(right_vesc_pid_controller.get_command());
+		Serial.print(" \tEr: ");
+		Serial.print(right_vesc_pid_controller.get_error());
+		Serial.print(" \tw:  ");
+		Serial.print(right_vesc_pid_controller.get_error_deriv());
+		Serial.print(" \tKp: ");
+		Serial.print(right_vesc_pid_controller.get_pterm());
+		Serial.print(" \tKd: ");
+		Serial.println(right_vesc_pid_controller.get_dterm());
+	}
+}
+
 void loop() {
 
 	float last_read_angle;
@@ -224,11 +248,21 @@ void loop() {
 		float angle_set_point = 180.0;
 		long time_delta = micros() - tmotor_state.time_last_angle_read;
 
+		/*
 		float current_command = MAX_CURRENT*positionPidControl(last_read_angle,
 				tmotor_state.last_angle,
 				angle_set_point,
 				time_delta,
 				VESC_pd_k);
+	  */
+		float error = utils_angle_difference(last_read_angle, angle_set_point);
+		float current_command = MAX_CURRENT*right_vesc_pid_controller.compute_command(error, time_delta/(1000000.0));
+
+		// SAFETY: set current to zero if ang vel > 1000 degree per second
+		if(abs(right_vesc_pid_controller.get_error_deriv()) > 1000) {
+			current_command = 0.0;
+			// Serial.println("Error: too fast, setting current to 0");
+		}
 
 		tmotor_state.time_last_angle_read = micros();
 
@@ -238,17 +272,17 @@ void loop() {
 		// Serial.print(millis());
 		// Serial.print(" ");
 		// Serial.println(current_command);
+		print_debug();
 	}
 
-
 	// operate this loop at 500hz
-	/*
+
 	if(micros() - last_send > 2*1000) {
 		last_send = micros();
 
 		int32_t command = continuousRotationCommand(millis()/1000.0, 1000000, 0.5);
 
 		sendMultipliedAngleOverCAN(CANTransceiver,command);
-	}*/
+	}
 
 }
