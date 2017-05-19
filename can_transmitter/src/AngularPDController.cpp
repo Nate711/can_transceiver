@@ -22,6 +22,9 @@ float pid_utils_angle_difference(float angle1, float angle2) {
 	return difference;
 }
 
+/*
+ * Need to change dt to microseconds to speed up calculations
+ */
 float AngularPDController::compute_command(float error, float dt) {
   last_error = error;
 

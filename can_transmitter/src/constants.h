@@ -10,5 +10,5 @@ bool e_stop_pressed = false;
 const float MAX_CURRENT = 8.0;
 const float MAX_ANGULAR_VEL = 2000; // deg per sec
 
-const int8_t CONTROLLER_ID_FOR_LEFT_VESC = 0;
-const int8_t CONTROLLER_ID_FOR_RIGHT_VESC = 1;
+const int8_t LM_CHANNEL_ID = 0;
+const int8_t RM_CHANNEL_ID = 1;
