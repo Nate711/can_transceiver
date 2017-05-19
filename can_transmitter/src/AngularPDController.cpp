@@ -35,7 +35,7 @@ float AngularPDController::compute_command(float error, float dt) {
     last_error_deriv = pid_utils_angle_difference(error, last_angular_error) /
         (dt);
   }
-  
+
   last_angular_error = error;
 
   float dterm = pd_constants.Kd*last_error_deriv;

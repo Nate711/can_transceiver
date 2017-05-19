@@ -7,29 +7,39 @@
 #include "buffer.h"
 #include "utils.h"
 
-// create CAN object
+// Create CAN object
 FlexCAN CANTransceiver(500000); // default is 500k baud
 static CAN_message_t msg;
 
+// Longs to keep track of the last time a debugging print message was sent
+// and last time
 unsigned long last_send = micros();
 unsigned long last_print_debug = micros();
+unsigned long last_print_motor_status = micros();
 
+/**
+ * Struct to keep track of PID constants: Should be obsolete with PD class
+ **/
 struct PD_Constants {
 	float Kp;
 	// float Ki;
 	float Kd;
 } VESC_pd_k;
 
+/**
+ * Struct to keep track of the motor state: Should replace with a motor class
+ **/
 struct Motor_State {
 	float last_angle;
 	float last_degps;
 	long time_last_angle_read;
 } left_tmotor_state,right_tmotor_state;
 
-AngularPDController right_vesc_pid_controller(-0.05,
+// PD controller objects to control the VESCs
+AngularPDController right_vesc_pid_controller(-0.07,
 																							-0.0005,
 																							1.0);
-AngularPDController left_vesc_pid_controller(-0.05,
+AngularPDController left_vesc_pid_controller(-0.07,
 																							-0.0005,
 																							1.0);
 
@@ -91,12 +101,12 @@ bool readAngleOverCAN(FlexCAN& CANrx, float& last_angle_received, int& transmitt
  * Sends a rotor position command over CAN
  * rotor angle must already be multiplied by 1 million
 **/
-void sendMultipliedAngleOverCAN(FlexCAN& CANtx, const uint32_t& multiplied_angle) {
+void sendMultipliedAngleOverCAN(FlexCAN& CANtx, const uint32_t& multiplied_angle, const int8_t& controller_id) {
 	CAN_message_t msg;
 
 	// use a controller ID of 255 (VESC will accept all 255 ID messages)
 	// CAN_PACKET_SET_POS byte goes on the left of the ID byte
-	msg.id = 255 | ((int32_t)CAN_PACKET_SET_POS << 8);
+	msg.id = controller_id | ((int32_t)CAN_PACKET_SET_POS << 8);
 	msg.len = 4; // 4 byte int
 
 	int32_t index=0;
@@ -232,14 +242,29 @@ void setup() {
 	VESC_pd_k.Kd = 0.0005;
 
 	// INITIALIZE ALL YOUR THINGS
-	left_tmotor_state.last_angle = 0.0;
+	left_tmotor_state.last_angle = 0.0; // 0 degrees is a safe angle for the motor
 	left_tmotor_state.last_degps = 0.0;
 	left_tmotor_state.time_last_angle_read = micros();
 
-	right_tmotor_state.last_angle = 0.0;
+	right_tmotor_state.last_angle = 180.0; // 180 is safe for the motor
 	right_tmotor_state.last_degps = 0.0;
 	right_tmotor_state.time_last_angle_read = micros();
 }
+
+void print_motor_status() {
+	if(micros() - last_print_motor_status > 100*1000) {
+		last_print_motor_status = micros();
+		Serial.print("Left Angle: ");
+		Serial.print(left_tmotor_state.last_angle);
+		Serial.print("\tRight Angle: ");
+		Serial.print(right_tmotor_state.last_angle);
+		Serial.print("\tLeft Angle Target: ");
+		Serial.print(utils_angle_difference(180.0, right_tmotor_state.last_angle));
+		Serial.print("\tRight Angle Target: ");
+		Serial.println(utils_angle_difference(180.0, left_tmotor_state.last_angle));
+	}
+}
+
 
 void print_debug() {
 	if(micros()-last_print_debug > 100*1000) {
@@ -284,15 +309,22 @@ void loop() {
 		int transmitter_ID;
 		if(readAngleOverCAN(CANTransceiver,last_read_angle,transmitter_ID)) {
 			if(transmitter_ID == CONTROLLER_ID_FOR_RIGHT_VESC) {
-				float right_angle = last_read_angle;
+				right_tmotor_state.last_angle = last_read_angle;
+
+				/************ PID CONTROL **********/
 
 				// float angle = continuousRotationCommand(millis()/1000.0, 1000000, 0.5)/1000000.0;
 				// float angle = squareWaveCommand(millis()/1000.0, 1000, 25, 5)/1000.0;
-				float angle_set_point = 180.0;
+				// RIGHT MOTOR CENTERS AT 180
+				// haptic feedback version
+				float angle_set_point = utils_angle_difference(180, left_tmotor_state.last_angle);
+				// angle_set_point = constrain(angle_set_point, 140, 220);
+				// float angle_set_point = 180.0-60.0;
+
+
 				long time_delta = micros() - right_tmotor_state.time_last_angle_read;
 
-
-				float error = utils_angle_difference(right_angle, angle_set_point);
+				float error = utils_angle_difference(right_tmotor_state.last_angle, angle_set_point);
 				float current_command = MAX_CURRENT*right_vesc_pid_controller.compute_command(error, time_delta/(1000000.0));
 
 				// NOT WORKING BC FUCKING GET_ERROR_DERIV
@@ -313,22 +345,38 @@ void loop() {
 				sendMultipliedCurrentOverCAN(CANTransceiver,
 						(int32_t)(current_command * 1000.0),
 						CONTROLLER_ID_FOR_RIGHT_VESC);
+				// print_debug();
 
-				print_debug();
+				print_motor_status();
+				/*
+
+				float offset_angle = 180 - right_tmotor_state.last_angle;
+				//offset_angle = constrain(offset_angle, 160, 220);
+
+				int32_t command = (offset_angle) * 1000000;
+				sendMultipliedAngleOverCAN(CANTransceiver, command,CONTROLLER_ID_FOR_LEFT_VESC);
+				*/
 			}
 			if(transmitter_ID == CONTROLLER_ID_FOR_LEFT_VESC) {
-				float left_angle = last_read_angle;
+				left_tmotor_state.last_angle = last_read_angle;
 
-				// float angle = continuousRotationCommand(millis()/1000.0, 1000000, 0.5)/1000000.0;
-				// float angle = squareWaveCommand(millis()/1000.0, 1000, 25, 5)/1000.0;
-				float angle_set_point = 0.0;
+				/************ PID CONTROL **********/
+
+				// follow the right motor for haptic like behavior
+				float angle_set_point = utils_angle_difference(180,
+																							right_tmotor_state.last_angle);
+				angle_set_point = constrain(angle_set_point, -60, 60);
+				// so if right motor is at 170 degrees, the left motor should be at 10 degrees
+
+				// float angle_set_point = 0.0;
+
 				long time_delta = micros() - left_tmotor_state.time_last_angle_read;
 
-
-				float error = utils_angle_difference(left_angle, angle_set_point);
+				float error = utils_angle_difference(left_tmotor_state.last_angle, angle_set_point);
 				float current_command = MAX_CURRENT*left_vesc_pid_controller.compute_command(error, time_delta/(1000000.0));
 
-				// NOT WORKING BC FUCKING GET_ERROR_DERIV
+				left_tmotor_state.time_last_angle_read = micros();
+
 				// SAFETY: set current to zero if ang vel > 1000 degree per second
 				float d = left_vesc_pid_controller.get_error_deriv();
 				if(d > MAX_ANGULAR_VEL || d < -MAX_ANGULAR_VEL) {
@@ -338,13 +386,16 @@ void loop() {
 					current_command = 0.0;
 				}
 
-				left_tmotor_state.time_last_angle_read = micros();
-
 				sendMultipliedCurrentOverCAN(CANTransceiver,
 						(int32_t)(current_command * 1000.0),
 						CONTROLLER_ID_FOR_LEFT_VESC);
+				// print_debug();
+				print_motor_status();
+				/*
 
-				print_debug();
+				int32_t command = (180.0-left_tmotor_state.last_angle) * 1000000;
+				sendMultipliedAngleOverCAN(CANTransceiver, command,CONTROLLER_ID_FOR_RIGHT_VESC);
+				*/
 			}
 		}
 
