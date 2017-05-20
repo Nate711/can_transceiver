@@ -29,13 +29,13 @@
 
 // void utils_step_towards(float *value, float goal, float step);
 // float utils_calc_ratio(float low, float high, float val);
-// void utils_norm_angle(float *angle);
+void utils_norm_angle(const float& angle);
 // void utils_norm_angle_rad(float *angle);
 // int utils_truncate_number(float *number, float min, float max);
 // float utils_map(float x, float in_min, float in_max, float out_min, float out_max);
 // int utils_map_int(int x, int in_min, int in_max, int out_min, int out_max);
 // void utils_deadband(float *value, float tres, float max);
-float utils_angle_difference(float angle1, float angle2);
+float utils_angle_difference(const float& angle1, const float& angle2);
 // float utils_angle_difference_rad(float angle1, float angle2);
 // float utils_avg_angles_rad_fast(float *angles, float *weights, int angles_num);
 // float utils_middle_of_3(float a, float b, float c);

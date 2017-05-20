@@ -16,7 +16,7 @@ private:
 	long time_last_angle_read;
 
   // Holds the most recent time delta between measurements in MICROS
-  long last_time_delta;
+  long last_time_delta_micros;
 
   // Offset and direction for encoder
   float encoder_offset;
@@ -36,27 +36,27 @@ private:
   // FlexCAN object to use for comms
   FlexCAN& CANtx;
 
-  // PID object
+  // PID object to control angular position
   AngularPDController pos_controller;
 
   //
-  unsigned long last_print_debug = 0;
+  elapsedMillis last_print_debug=0;
 
 public:
   VESC(float encoder_offset1,
             int encoder_direction1,
             float max_current1,
             float max_speed1,
-            float Kp, float Kd, float threshold,
+            float Kp, float Kd,
             int8_t controller_channel_ID1,
             FlexCAN& cantx);
 
-  void update_deg(float deg);
+  void update_deg(const float& deg);
   float read_corrected_deg();
 
-  void set_current(float current);
+  void set_current(const float& current);
 
-  void pid_update(float set_point);
+  void pid_update(const float& set_point);
 
   void print_debug();
 };

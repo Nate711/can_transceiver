@@ -1,11 +1,10 @@
 #include "AngularPDController.h"
 #include <Arduino.h>
+#include "utils.h"
 
-AngularPDController::AngularPDController(float kp, float kd, float threshold1) {
+AngularPDController::AngularPDController(float kp, float kd) {
   pd_constants.Kp = kp;
   pd_constants.Kd = kd;
-
-  threshold = threshold1;
 
   last_angular_error = 0.0;
   last_error_deriv = 0.0;
@@ -14,45 +13,38 @@ AngularPDController::AngularPDController(float kp, float kd, float threshold1) {
   last_dterm = 0.0;
 }
 
-float pid_utils_angle_difference(float angle1, float angle2) {
-	// Faster in most cases
-	float difference = angle1 - angle2;
-	while (difference < -180.0) difference += 2.0 * 180.0;
-	while (difference > 180.0) difference -= 2.0 * 180.0;
-	return difference;
-}
-
 /*
  * Need to change dt to microseconds to speed up calculations
  */
-float AngularPDController::compute_command(float error, float dt) {
-  last_error = error;
+float AngularPDController::compute_command(const float& error, const unsigned long& dt_micros) {
+  // Compute p term
+  last_pterm = pd_constants.Kp*error;
 
-  float pterm = pd_constants.Kp*error;
-  last_pterm = pterm;
-
+  // Compute angular velocity of error
   if(first_loop) {
     last_error_deriv = 0.0;
     first_loop = false;
   } else {
-    last_error_deriv = pid_utils_angle_difference(error, last_angular_error) /
-        (dt);
+    last_error_deriv = 1000000*utils_angle_difference(error, last_angular_error) /
+        (dt_micros);
   }
-
   last_angular_error = error;
 
-  float dterm = pd_constants.Kd*last_error_deriv;
-  last_dterm = dterm;
+  // Compute d term
+  last_dterm = pd_constants.Kd*last_error_deriv;
 
-  float command = pterm + dterm;
-  last_command = constrain(command,-threshold,threshold);
+  // Compute final command
+  last_command = last_pterm + last_dterm;
 
+  // Constrain the output between -1.0 and 1.0
+  last_command = last_command > 1.0 ? 1.0 : last_command;
+  last_command = last_command < -1.0 ? -1.0 : last_command;
 
   return last_command;
 }
 
 float AngularPDController::get_error() {
-  return last_error;
+  return last_angular_error;
 }
 
 float AngularPDController::get_error_deriv() {

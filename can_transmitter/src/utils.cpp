@@ -132,7 +132,7 @@ int utils_map_int(int x, int in_min, int in_max, int out_min, int out_max) {
  * @return
  * The difference between the angles
  */
-float utils_angle_difference(float angle1, float angle2) {
+float utils_angle_difference(const float& angle1, const float& angle2) {
 //	utils_norm_angle(&angle1);
 //	utils_norm_angle(&angle2);
 //
@@ -152,7 +152,24 @@ float utils_angle_difference(float angle1, float angle2) {
 	while (difference > 180.0) difference -= 2.0 * 180.0;
 	return difference;
 }
+/**
+ * Make sure that 0 <= angle < 360
+ *
+ * @param angle
+ * The angle to normalize.
+ */
+void utils_norm_angle(float& angle) {
+  // The while loop method saves 1us
+  while(angle < 0.0) angle += 360.0;
+  while(angle > 360.0) angle -= 360.0;
 
+	// angle = fmodf(angle, 360.0);
+  //
+	// if (angle < 0.0) {
+	// 	angle += 360.0;
+	// }
+
+}
 /**
  * Get the difference between two angles. Will always be between -pi and +pi radians.
  * @param angle1

@@ -26,10 +26,10 @@ static CAN_message_t msg;
 
 // Longs to keep track of the last time a debugging print message was sent
 // and last time
-unsigned long last_send = micros();
-unsigned long last_print_debug = micros();
-unsigned long last_print_motor_status = micros();
-unsigned long last_print_shit = micros();
+elapsedMillis last_send;
+elapsedMillis last_print_debug;
+elapsedMillis last_print_motor_status;
+elapsedMillis last_print_shit;
 
 /**
  * Struct to keep track of PID constants: Should be obsolete with PD class
@@ -49,13 +49,6 @@ struct Motor_State {
 	long time_last_angle_read;
 } left_tmotor_state,right_tmotor_state;
 
-// PD controller objects to control the VESCs
-AngularPDController right_vesc_pid_controller(-0.07,
-																							-0.0005,
-																							1.0);
-AngularPDController left_vesc_pid_controller(-0.07,
-																							-0.0005,
-																							1.0);
 
 // VESC motor objects
 VESC left_vesc(0, // offset
@@ -64,7 +57,6 @@ VESC left_vesc(0, // offset
 	1000, // max speed
 	-0.07, // Kp
 	-0.0005, // Kd
-	1.0, // PID max
 	LM_CHANNEL_ID,CANTransceiver); // CAN channel id and flexcan
 VESC right_vesc(0,
 	1, // direction
@@ -72,7 +64,6 @@ VESC right_vesc(0,
 	1000, // max speed
 	-0.07, // Kp
 	-0.0005, // Kd
-	1.0, // PID max
 	RM_CHANNEL_ID,CANTransceiver); // CAN channel id and flexcan
 
 /**
@@ -226,8 +217,8 @@ float current_command = MAX_CURRENT*positionPidControl(last_read_angle,
 // 	float res =  -(error*pd_k.Kp + error_deriv*pd_k.Kd);
 // 	res = constrain(res, -1.0, 1.0);
 //
-// 	if(micros() - last_send > 50*1000) {
-// 		last_send = micros();
+// 	if(last_send > 50) {
+// 		last_send -= 50;
 //
 // 		Serial.print("O: ");
 // 		Serial.print(res);
@@ -284,8 +275,8 @@ void setup() {
 }
 
 void print_motor_status() {
-	if(micros() - last_print_motor_status > 100*1000) {
-		last_print_motor_status = micros();
+	if(last_print_motor_status > 100) {
+		last_print_motor_status -= 100;
 		Serial.print("Left Angle: ");
 		Serial.print(left_tmotor_state.last_angle);
 		Serial.print("\tRight Angle: ");
@@ -297,37 +288,37 @@ void print_motor_status() {
 	}
 }
 
-void print_debug() {
-	if(micros()-last_print_debug > 100*1000) {
-		last_print_debug = micros();
-
-		Serial.print("O: ");
-		Serial.print(left_vesc_pid_controller.get_command());
-		Serial.print(" \tEr: ");
-		Serial.print(left_vesc_pid_controller.get_error());
-		Serial.print(" \tw:  ");
-		Serial.print(left_vesc_pid_controller.get_error_deriv());
-		Serial.print(" \tKp: ");
-		Serial.print(left_vesc_pid_controller.get_pterm());
-		Serial.print(" \tKd: ");
-		Serial.print(left_vesc_pid_controller.get_dterm());
-
-		Serial.print("\tO: ");
-		Serial.print(right_vesc_pid_controller.get_command());
-		Serial.print(" \tEr: ");
-		Serial.print(right_vesc_pid_controller.get_error());
-		Serial.print(" \tw:  ");
-		Serial.print(right_vesc_pid_controller.get_error_deriv());
-		Serial.print(" \tKp: ");
-		Serial.print(right_vesc_pid_controller.get_pterm());
-		Serial.print(" \tKd: ");
-		Serial.println(right_vesc_pid_controller.get_dterm());
-	}
-}
+// void print_debug() {
+// 	if(last_print_debug > 100) {
+// 		last_print_debug -= 100;
+//
+// 		Serial.print("O: ");
+// 		Serial.print(left_vesc_pid_controller.get_command());
+// 		Serial.print(" \tEr: ");
+// 		Serial.print(left_vesc_pid_controller.get_error());
+// 		Serial.print(" \tw:  ");
+// 		Serial.print(left_vesc_pid_controller.get_error_deriv());
+// 		Serial.print(" \tKp: ");
+// 		Serial.print(left_vesc_pid_controller.get_pterm());
+// 		Serial.print(" \tKd: ");
+// 		Serial.print(left_vesc_pid_controller.get_dterm());
+//
+// 		Serial.print("\tO: ");
+// 		Serial.print(right_vesc_pid_controller.get_command());
+// 		Serial.print(" \tEr: ");
+// 		Serial.print(right_vesc_pid_controller.get_error());
+// 		Serial.print(" \tw:  ");
+// 		Serial.print(right_vesc_pid_controller.get_error_deriv());
+// 		Serial.print(" \tKp: ");
+// 		Serial.print(right_vesc_pid_controller.get_pterm());
+// 		Serial.print(" \tKd: ");
+// 		Serial.println(right_vesc_pid_controller.get_dterm());
+// 	}
+// }
 
 void print_status() {
-	if(micros() - last_print_debug > 100*1000) {
-		last_print_debug = micros();
+	if(last_print_debug > 100) {
+		last_print_debug -= 100;
 
 		Serial.print("State: ");
 		switch(teensy_state) {
@@ -348,8 +339,9 @@ void print_status() {
 }
 
 void print_shit() {
-	if(micros() - last_print_shit > 10*1000) {
-		last_print_shit = micros();
+	if(last_print_shit > 10) {
+		last_print_shit -= 10;
+
 		Serial.println(loop_time);
 	}
 }
@@ -375,11 +367,11 @@ void loop() {
 		case ESTOP:
 			// Handle the ESTOP behavior: if it has been pressed or is currently pressed
 			// then send a zero current command over to the VESC and delay 500ms
-			sendMultipliedCurrentOverCAN(CANTransceiver,0,RM_CHANNEL_ID);
-			sendMultipliedCurrentOverCAN(CANTransceiver,0,LM_CHANNEL_ID);
+			right_vesc.set_current(0.0);
+			left_vesc.set_current(0.0);
 
 			print_status();
-			delay(100);
+			delay(200);
 
 			break;
 
@@ -396,9 +388,10 @@ void loop() {
 				if(readAngleOverCAN(CANTransceiver,last_read_angle,transmitter_ID)) { // time to read is 9 us
 					if(transmitter_ID == RM_CHANNEL_ID) {
 
+						right_vesc.update_deg(last_read_angle); // 4 micros
+
 						long then = micros();
-						right_vesc.update_deg(last_read_angle); // 15 micros
-						right_vesc.pid_update(180.0); // 25 micros
+						right_vesc.pid_update(180.0); // 24 micros
 						loop_time = micros() - then;
 
 
@@ -426,41 +419,46 @@ void loop() {
 						print_shit();
 					}
 					if(transmitter_ID == LM_CHANNEL_ID) {
-						left_tmotor_state.last_angle = last_read_angle;
 
-						/************ PID CONTROL **********/
+						left_vesc.update_deg(last_read_angle);
+						left_vesc.pid_update(0.0);
 
-						// follow the right motor for haptic like behavior
-						float angle_set_point = utils_angle_difference(180,
-																									right_tmotor_state.last_angle);
-						angle_set_point = constrain(angle_set_point, -60, 60);
-						// so if right motor is at 170 degrees, the left motor should be at 10 degrees
+						//
+						// left_tmotor_state.last_angle = last_read_angle;
+						//
+						// /************ PID CONTROL **********/
+						//
+						// // follow the right motor for haptic like behavior
+						// float angle_set_point = utils_angle_difference(180,
+						// 																			right_tmotor_state.last_angle);
+						// angle_set_point = constrain(angle_set_point, -60, 60);
+						// // so if right motor is at 170 degrees, the left motor should be at 10 degrees
+						//
+						// // float angle_set_point = 0.0;
+						//
+						// long time_delta = micros() - left_tmotor_state.time_last_angle_read;
+						//
+						// float error = utils_angle_difference(left_tmotor_state.last_angle, angle_set_point);
+						// float current_command = MAX_CURRENT*left_vesc_pid_controller.compute_command(error, time_delta/(1000000.0));
+						//
+						// left_tmotor_state.time_last_angle_read = micros();
+						//
+						// // SAFETY: set current to zero if ang vel > 1000 degree per second
+						// float d = left_vesc_pid_controller.get_error_deriv();
+						// if(d > MAX_ANGULAR_VEL || d < -MAX_ANGULAR_VEL) {
+						// 	Serial.print("ERROR DERIV: ");
+						// 	Serial.println(d);
+						// 	// e_stop_pressed = true;
+						// 	current_command = 0.0;
+						// }
+						//
+						// sendMultipliedCurrentOverCAN(CANTransceiver,
+						// 		(int32_t)(current_command * 1000.0),
+						// 		LM_CHANNEL_ID);
+						// // print_debug();
+						// print_motor_status();
 
-						// float angle_set_point = 0.0;
-
-						long time_delta = micros() - left_tmotor_state.time_last_angle_read;
-
-						float error = utils_angle_difference(left_tmotor_state.last_angle, angle_set_point);
-						float current_command = MAX_CURRENT*left_vesc_pid_controller.compute_command(error, time_delta/(1000000.0));
-
-						left_tmotor_state.time_last_angle_read = micros();
-
-						// SAFETY: set current to zero if ang vel > 1000 degree per second
-						float d = left_vesc_pid_controller.get_error_deriv();
-						if(d > MAX_ANGULAR_VEL || d < -MAX_ANGULAR_VEL) {
-							Serial.print("ERROR DERIV: ");
-							Serial.println(d);
-							// e_stop_pressed = true;
-							current_command = 0.0;
-						}
-
-						sendMultipliedCurrentOverCAN(CANTransceiver,
-								(int32_t)(current_command * 1000.0),
-								LM_CHANNEL_ID);
-						// print_debug();
-						print_motor_status();
 						/*
-
 						int32_t command = (180.0-left_tmotor_state.last_angle) * 1000000;
 						sendMultipliedAngleOverCAN(CANTransceiver, command,RM_CHANNEL_ID);
 						*/
@@ -485,8 +483,8 @@ void loop() {
 
 		// operate this loop at 500hz
 		/*
-		if(micros() - last_send > 2*1000) {
-			last_send = micros();
+		if(last_send > 2) {
+			last_send -= 2;
 
 			int32_t command = continuousRotationCommand(millis()/1000.0, 1000000, 0.5);
 

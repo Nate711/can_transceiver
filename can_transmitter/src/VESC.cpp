@@ -11,9 +11,9 @@ VESC::VESC(float encoder_offset1,
           int encoder_direction1,
           float max_current1,
           float max_speed1,
-          float Kp, float Kd, float threshold,
+          float Kp, float Kd,
           int8_t controller_channel_ID1,
-          FlexCAN& cantx) : CANtx(cantx), pos_controller(Kp,Kd,threshold){
+          FlexCAN& cantx) : CANtx(cantx), pos_controller(Kp,Kd){
 
   encoder_offset = encoder_offset1;
   encoder_direction = encoder_direction1;
@@ -35,35 +35,39 @@ VESC::VESC(float encoder_offset1,
 /**
  * Compute PID output and send to VESC. Uses last given values
  */
-void VESC::pid_update(float set_point) {
+void VESC::pid_update(const float& set_point) {
   float error = utils_angle_difference(read_corrected_deg(),set_point);
   float cur_command = max_current *
-            pos_controller.compute_command(error,last_time_delta/1000000.0);
+            pos_controller.compute_command(error,last_time_delta_micros);
 
   set_current(cur_command);
 }
 
 /**
  * Updates the VESC objects knowledge of the motor angle
+ * Takes between 4 and 5 us with while loop norm angle
  */
-void VESC::update_deg(float raw_deg) {
+void VESC::update_deg(const float& raw_deg) {
   unsigned long now_time = micros();
 
   // Apply correction formula
   float corrected = (encoder_direction==1)?raw_deg:(-raw_deg) + encoder_offset;
+  // 26 us without this line, 31 with this line = 5 us time
   utils_norm_angle(corrected);
 
   // Compute time since last deg update and
-  last_time_delta = now_time - time_last_angle_read;
+  last_time_delta_micros = now_time - time_last_angle_read;
   // POTENTIAL PROBLEM: if the main loop calls update_deg with the same angle
   // at different times then the VESC object will think the speed is 0
   time_last_angle_read = now_time;
 
+
   // Compute velocity in deg per s
   // This computation is subject to noise!
   // 37-38 us loop time
-  true_degps = 1000000*utils_angle_difference(corrected,true_deg) /
-                                      (float)(last_time_delta);
+  // this line takes 6-8 us
+  // true_degps = (1000000*utils_angle_difference(corrected,true_deg)) /
+  //                                     (float)(last_time_delta);
   // 38-39 us loop time
   // true_degps = utils_angle_difference(corrected,true_deg) /
   //                                     (last_time_delta/1000000.0);
@@ -82,7 +86,7 @@ float VESC::read_corrected_deg() {
 /**
  * Sends current command to the VESC
  */
-void VESC::set_current(float current) {
+void VESC::set_current(const float& current) {
   CAN_message_t msg;
   int MULTIPLIER = 1000;
 
@@ -103,10 +107,9 @@ void VESC::set_current(float current) {
 	CANtx.write(msg);
 }
 
-
 void VESC::print_debug() {
-	if(micros()-last_print_debug > 100*1000) {
-		last_print_debug = micros();
+	if(last_print_debug > 100) {
+		last_print_debug = 0;
 
 		Serial.print("O: ");
 		Serial.print(pos_controller.get_command());
@@ -118,18 +121,5 @@ void VESC::print_debug() {
 		Serial.print(pos_controller.get_pterm());
 		Serial.print(" \tKd: ");
 		Serial.println(pos_controller.get_dterm());
-	}
-}
-/**
- * Make sure that 0 <= angle < 360
- *
- * @param angle
- * The angle to normalize.
- */
-void utils_norm_angle(float& angle) {
-	angle = fmodf(angle, 360.0);
-
-	if (angle < 0.0) {
-		angle += 360.0;
 	}
 }

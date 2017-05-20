@@ -14,7 +14,6 @@ private:
   float threshold;
 
   // stores last given error
-  float last_error;
   float last_error_deriv;
 
   // stores the last angular error float
@@ -34,8 +33,8 @@ private:
   } pd_constants;
 
 public:
-  AngularPDController(float kp, float kd, float threshold1);
-  float compute_command(float error, float dt);
+  AngularPDController(float kp, float kd);
+  float compute_command(const float& error, const unsigned long& dt_micros);
 
   float get_error();
   float get_error_deriv();
