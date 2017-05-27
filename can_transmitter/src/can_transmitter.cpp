@@ -32,8 +32,11 @@ elapsedMillis last_print_motor_status = 0;
 elapsedMillis last_print_shit = 0;
 
 // Variable to keep track of micros elapsed since last time sent a current
-// command to the vescs
-elapsedMicros last_current_command;
+// command to the right VESC
+elapsedMicros RM_current_command = 0;
+
+// Variable to keep track of time since command to RM was sent
+bool LM_current_command_sent = 0;
 
 /**
  * Struct to keep track of PID constants: Should be obsolete with PD class
@@ -342,14 +345,29 @@ void loop() {
 							break;
 					}
 				}
+				/******* End of handling messages from VESCs ******/
 
+				/****** Send current messages to VESCs *******/
 				// Send position current commands at 1khz aka 1000 us per loop
-				if(last_current_command > 1000) {
-					last_current_command -= 1000;
+				// LM command should be sent halfway between RM commands
+				if(RM_current_command > PID_PERIOD) {
+					RM_current_command = 0;
+
+					// Start of a new cycle, LM should be sent after PID_PERIOD/2 us
+					LM_current_command_sent = false;
+
 					// long then = micros();
 					right_vesc.pid_update(180.0); // takes 24 micros to complete
-					left_vesc.pid_update(0.0);
 					// loop_time = micros() - then;
+				}
+
+				// This look should execute halfway between every RM current command
+				if(RM_current_command > PID_PERIOD/2 && !LM_current_command_sent) {
+					LM_current_command_sent = true;
+
+					left_vesc.pid_update(0.0);
+				}
+				/****** End of sending current messages to VESCs *******/
 
 				  // 180- should be utils_angle_difference
 					// float offset_angle = 180 - right_tmotor_state.last_angle;
@@ -358,10 +376,8 @@ void loop() {
 					// sendMultipliedAngleOverCAN(CANTransceiver, command,LM_CHANNEL_ID);
 					// right_vesc.print_debug();
 					// print_shit();
-				}
 			}
 			break;
-
 		/*
 		// operate this loop at 500hz
 		if(last_send > 2) {
