@@ -26,14 +26,10 @@ static CAN_message_t msg;
 
 // Longs to keep track of the last time a debugging print message was sent
 // and last time
-elapsedMillis last_send = 0;
-elapsedMillis last_print_debug = 0;
-elapsedMillis last_print_motor_status = 0;
-elapsedMillis last_print_shit = 0;
-
-// Variable to keep track of micros elapsed since last time sent a current
-// command to the vescs
-elapsedMicros last_current_command;
+elapsedMillis last_send;
+elapsedMillis last_print_debug;
+elapsedMillis last_print_motor_status;
+elapsedMillis last_print_shit;
 
 /**
  * Struct to keep track of PID constants: Should be obsolete with PD class
@@ -327,43 +323,63 @@ void loop() {
 				break; // redundant
 			} else {
 
-				/****** Handle any position messages from VESCs ******/
 				float last_read_angle;
 				int transmitter_ID;
 
-				// time to read angle over can is 9 us
-				if(readAngleOverCAN(CANTransceiver, last_read_angle, transmitter_ID)) {
-					switch(transmitter_ID) {
-						case RM_CHANNEL_ID:
-							right_vesc.update_deg(last_read_angle);
-							break;
-						case LM_CHANNEL_ID:
-							left_vesc.update_deg(last_read_angle);
-							break;
+				if(readAngleOverCAN(CANTransceiver,last_read_angle,transmitter_ID)) { // time to read is 9 us
+					if(transmitter_ID == RM_CHANNEL_ID) {
+
+						right_vesc.update_deg(last_read_angle); // 4 micros
+
+						long then = micros();
+						right_vesc.pid_update(180.0); // 24 micros
+						loop_time = micros() - then;
+
+						// float offset_angle = 180 - right_tmotor_state.last_angle;
+						// //offset_angle = constrain(offset_angle, 160, 220);
+						//
+						// int32_t command = (offset_angle) * 1000000;
+						// sendMultipliedAngleOverCAN(CANTransceiver, command,LM_CHANNEL_ID);
+
+						// right_vesc.print_debug();
+						print_shit();
 					}
-				}
+					if(transmitter_ID == LM_CHANNEL_ID) {
 
-				// Send position current commands at 1khz aka 1000 us per loop
-				if(last_current_command > 1000) {
-					last_current_command -= 1000;
-					// long then = micros();
-					right_vesc.pid_update(180.0); // takes 24 micros to complete
-					left_vesc.pid_update(0.0);
-					// loop_time = micros() - then;
+						left_vesc.update_deg(last_read_angle);
+						left_vesc.pid_update(0.0);
 
-				  // 180- should be utils_angle_difference
-					// float offset_angle = 180 - right_tmotor_state.last_angle;
-					// offset_angle = constrain(offset_angle, 160, 220);
-					// int32_t command = (offset_angle) * 1000000;
-					// sendMultipliedAngleOverCAN(CANTransceiver, command,LM_CHANNEL_ID);
-					// right_vesc.print_debug();
-					// print_shit();
+						// sendMultipliedCurrentOverCAN(CANTransceiver,
+						// 		(int32_t)(current_command * 1000.0),
+						// 		LM_CHANNEL_ID);
+						// // print_debug();
+						// print_motor_status();
+
+						/*
+						int32_t command = (180.0-left_tmotor_state.last_angle) * 1000000;
+						sendMultipliedAngleOverCAN(CANTransceiver, command,RM_CHANNEL_ID);
+						*/
+					}
+
 				}
 			}
 			break;
 
-		/*
+/* OLD ESTOP CODE
+	// }
+	// // Handle the ESTOP behavior: if it has been pressed or is currently pressed
+	// // then send a zero current command over to the VESC and delay 10ms
+	// if(e_stop_pressed || (digitalReadFast(e_stop_pin) == LOW)) {
+	// 	e_stop_pressed = true;
+	// 	sendMultipliedCurrentOverCAN(CANTransceiver,0,RM_CHANNEL_ID);
+	// 	sendMultipliedCurrentOverCAN(CANTransceiver,0,LM_CHANNEL_ID);
+	// 	Serial.println("E-Stop Pressed");
+	// 	delay(200);
+	// } else {
+	*/
+
 		// operate this loop at 500hz
+		/*
 		if(last_send > 2) {
 			last_send -= 2;
 
