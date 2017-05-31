@@ -29,17 +29,20 @@ VESC::VESC(float encoder_offset1,
   time_last_angle_read = 0;
 
   true_deg = 0.0;
-  true_degps = 0.0;
+  true_degps = 0;
 }
 
 /**
  * Compute PID output and send to VESC. Uses last given values
  */
+
 void VESC::pid_update(const float& set_point) {
+
   float error = utils_angle_difference(read_corrected_deg(),set_point);
   float cur_command = max_current *
             pos_controller.compute_command(error,last_time_delta_micros);
 
+  // FUCK EVERYTHINGGGGG COMPARING FLOATS DOESNT WORK
   set_current(cur_command);
 }
 
@@ -66,8 +69,12 @@ void VESC::update_deg(const float& raw_deg) {
   // This computation is subject to noise!
   // 37-38 us loop time
   // this line takes 6-8 us
-  // true_degps = (1000000*utils_angle_difference(corrected,true_deg)) /
-  //                                     (float)(last_time_delta);
+  if(last_time_delta_micros==0) last_time_delta_micros = 1;
+
+  true_degps = (int)(1000000*utils_angle_difference(corrected,true_deg)) /
+                                        (int)(last_time_delta_micros);
+
+
   // 38-39 us loop time
   // true_degps = utils_angle_difference(corrected,true_deg) /
   //                                     (last_time_delta/1000000.0);
@@ -81,6 +88,10 @@ void VESC::update_deg(const float& raw_deg) {
  */
 float VESC::read_corrected_deg() {
   return true_deg;
+}
+
+float VESC::read_corrected_degps() {
+  return true_degps;
 }
 
 /**
@@ -115,8 +126,10 @@ void VESC::print_debug() {
 		Serial.print(pos_controller.get_command());
 		Serial.print(" \tEr: ");
 		Serial.print(pos_controller.get_error());
-		Serial.print(" \tw:  ");
+		Serial.print(" \tEr.w:  ");
 		Serial.print(pos_controller.get_error_deriv());
+    Serial.print(" \tw: ");
+    Serial.print(true_degps);
 		Serial.print(" \tKp: ");
 		Serial.print(pos_controller.get_pterm());
 		Serial.print(" \tKd: ");

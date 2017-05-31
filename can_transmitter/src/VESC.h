@@ -16,7 +16,7 @@ private:
 	long time_last_angle_read;
 
   // Holds the most recent time delta between measurements in MICROS
-  long last_time_delta_micros;
+  long last_time_delta_micros=30;
 
   // Offset and direction for encoder
   float encoder_offset;
@@ -26,11 +26,12 @@ private:
   int8_t controller_channel_ID;
 
   float max_current = 10; // amps
-  float max_speed = 1000; // deg per sec
+  float max_speed = 2000; // deg per sec
 
   // corrected position of the motor
-  float true_deg;
-  float true_degps;
+  float true_deg=0;
+
+  float true_degps=0;
 
 
   // FlexCAN object to use for comms
@@ -41,6 +42,9 @@ private:
 
   //
   elapsedMillis last_print_debug=0;
+
+	elapsedMillis print_w=0;
+
 
 public:
   VESC(float encoder_offset1,
@@ -53,6 +57,9 @@ public:
 
   void update_deg(const float& deg);
   float read_corrected_deg();
+	float read_corrected_degps();
+
+	void reset(int sleep_time);
 
   void set_current(const float& current);
 

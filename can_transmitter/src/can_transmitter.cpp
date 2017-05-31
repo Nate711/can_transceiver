@@ -43,18 +43,23 @@ struct PD_Constants {
 // VESC motor objects
 VESC left_vesc(0, // offset
 	1, // direction
-	1.0, // max current
-	1000, // max speed
+	MAX_CURRENT, // max current
+	MAX_ANGULAR_VEL, // max speed
 	-0.07, // Kp
-	-0.0005, // Kd
+	-0.001, // Kd //.5 thou default
 	LM_CHANNEL_ID,CANTransceiver); // CAN channel id and flexcan
 VESC right_vesc(0, // offset
 	1, // direction
-	15.0, // max current
-	1000, // max speed
+	MAX_CURRENT, // max current
+	MAX_ANGULAR_VEL, // max speed
 	-0.07, // Kp
-	-0.0005, // Kd
+	-0.001, // Kd
 	RM_CHANNEL_ID,CANTransceiver); // CAN channel id and flexcan
+
+// SUPER IMPORTANT PID TARGETS
+float right_vesc_target = 180; // CCW turn by 40deg
+float left_vesc_target = 100; // CW turn by 40 deg
+
 
 /**
 * frequency is in regular freq, not angular freq, so like 1Hz = 1 RPS
@@ -209,47 +214,6 @@ void setup() {
   Serial.println("CAN Transmitter Initialized");
 }
 
-// void print_motor_status() {
-// 	if(last_print_motor_status > 100) {
-// 		last_print_motor_status -= 100;
-// 		Serial.print("Left Angle: ");
-// 		Serial.print(left_tmotor_state.last_angle);
-// 		Serial.print("\tRight Angle: ");
-// 		Serial.print(right_tmotor_state.last_angle);
-// 		Serial.print("\tLeft Angle Target: ");
-// 		Serial.print(utils_angle_difference(180.0, right_tmotor_state.last_angle));
-// 		Serial.print("\tRight Angle Target: ");
-// 		Serial.println(utils_angle_difference(180.0, left_tmotor_state.last_angle));
-// 	}
-// }
-
-// void print_debug() {
-// 	if(last_print_debug > 100) {
-// 		last_print_debug -= 100;
-//
-// 		Serial.print("O: ");
-// 		Serial.print(left_vesc_pid_controller.get_command());
-// 		Serial.print(" \tEr: ");
-// 		Serial.print(left_vesc_pid_controller.get_error());
-// 		Serial.print(" \tw:  ");
-// 		Serial.print(left_vesc_pid_controller.get_error_deriv());
-// 		Serial.print(" \tKp: ");
-// 		Serial.print(left_vesc_pid_controller.get_pterm());
-// 		Serial.print(" \tKd: ");
-// 		Serial.print(left_vesc_pid_controller.get_dterm());
-//
-// 		Serial.print("\tO: ");
-// 		Serial.print(right_vesc_pid_controller.get_command());
-// 		Serial.print(" \tEr: ");
-// 		Serial.print(right_vesc_pid_controller.get_error());
-// 		Serial.print(" \tw:  ");
-// 		Serial.print(right_vesc_pid_controller.get_error_deriv());
-// 		Serial.print(" \tKp: ");
-// 		Serial.print(right_vesc_pid_controller.get_pterm());
-// 		Serial.print(" \tKd: ");
-// 		Serial.println(right_vesc_pid_controller.get_dterm());
-// 	}
-// }
 
 void print_status() {
 	if(last_print_debug > 100) {
@@ -281,6 +245,43 @@ void print_shit() {
 	}
 }
 
+void process_serial() {
+	if(Serial.available()) {
+		char c = Serial.read();
+
+		// Process each different command
+		switch(c) {
+			case 'p': // prime for jump
+				right_vesc_target = 76;
+				left_vesc_target = 340;
+				break;
+
+			case 'm': // midway jump position
+				right_vesc_target = 130;
+				left_vesc_target = 40;
+				break;
+
+			case 'j': // jump position
+				right_vesc_target = 188;
+				left_vesc_target = 100;
+				break;
+
+			case 'r': // neutral stance position
+				right_vesc_target = 186;
+				left_vesc_target = 120;
+				break;
+
+			case 'd': // vertically down position
+				right_vesc_target = 226-10;
+				left_vesc_target = 140-10;
+			default:
+				break;
+		}
+		// Only read the last byte in the buffer
+		Serial.clear();
+	}
+}
+
 void loop() {
 	// State machine switch control
 	switch(teensy_state) {
@@ -298,7 +299,11 @@ void loop() {
 			print_status();
 		  if(digitalReadFast(e_stop_pin) == HIGH) {
 				teensy_state = RUNNING;
-				delay(100);
+
+				// clear serial data so running subroutine doesn't see it
+				Serial.clear();
+
+				delay(500);
 
 			}
 			break;
@@ -317,11 +322,15 @@ void loop() {
 
 		// RUNNING state: do whatever PID control etc needs to be done
 		case RUNNING:
-
+			// print_status();
+			// check for estop
 			if(digitalReadFast(e_stop_pin) == LOW) {
 				teensy_state = ESTOP;
 				break; // redundant
 			} else {
+				// IMPORTANT
+				// read any jump commands
+				process_serial();
 
 				float last_read_angle;
 				int transmitter_ID;
@@ -331,52 +340,21 @@ void loop() {
 
 						right_vesc.update_deg(last_read_angle); // 4 micros
 
+						// SOMETHING VERY Wrong with using has_read_angle logic
+
 						long then = micros();
-						right_vesc.pid_update(180.0); // 24 micros
+						right_vesc.pid_update(right_vesc_target); // 24 micros
 						loop_time = micros() - then;
-
-						// float offset_angle = 180 - right_tmotor_state.last_angle;
-						// //offset_angle = constrain(offset_angle, 160, 220);
-						//
-						// int32_t command = (offset_angle) * 1000000;
-						// sendMultipliedAngleOverCAN(CANTransceiver, command,LM_CHANNEL_ID);
-
-						// right_vesc.print_debug();
-						print_shit();
 					}
 					if(transmitter_ID == LM_CHANNEL_ID) {
 
+						// left_vesc.set_current(0);
 						left_vesc.update_deg(last_read_angle);
-						left_vesc.pid_update(0.0);
-
-						// sendMultipliedCurrentOverCAN(CANTransceiver,
-						// 		(int32_t)(current_command * 1000.0),
-						// 		LM_CHANNEL_ID);
-						// // print_debug();
-						// print_motor_status();
-
-						/*
-						int32_t command = (180.0-left_tmotor_state.last_angle) * 1000000;
-						sendMultipliedAngleOverCAN(CANTransceiver, command,RM_CHANNEL_ID);
-						*/
+						left_vesc.pid_update(left_vesc_target);
 					}
-
 				}
 			}
 			break;
-
-/* OLD ESTOP CODE
-	// }
-	// // Handle the ESTOP behavior: if it has been pressed or is currently pressed
-	// // then send a zero current command over to the VESC and delay 10ms
-	// if(e_stop_pressed || (digitalReadFast(e_stop_pin) == LOW)) {
-	// 	e_stop_pressed = true;
-	// 	sendMultipliedCurrentOverCAN(CANTransceiver,0,RM_CHANNEL_ID);
-	// 	sendMultipliedCurrentOverCAN(CANTransceiver,0,LM_CHANNEL_ID);
-	// 	Serial.println("E-Stop Pressed");
-	// 	delay(200);
-	// } else {
-	*/
 
 		// operate this loop at 500hz
 		/*
