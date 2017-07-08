@@ -8,7 +8,7 @@ int led = 13;
 int e_stop_pin = 33; // Pin 2 on old teensy 3.2
 bool e_stop_pressed = false;
 
-const float MAX_CURRENT = 30.0; // 30 amps seems the max
+const float MAX_CURRENT = 8.0; // 30 amps seems the max
 const float MAX_ANGULAR_VEL = 500;  // deg per sec
 
 const float KP = -0.07;
@@ -27,5 +27,8 @@ const float RIGHT_VESC_UP = 36;
 // increases CCW when facing N side
 const float LEFT_VESC_DOWN = 140;
 const float LEFT_VESC_UP = 320;
+
+
+const int PID_PERIOD = 1000; // us
 
 #endif

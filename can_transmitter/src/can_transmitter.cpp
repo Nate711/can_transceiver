@@ -27,6 +27,13 @@ elapsedMillis last_print_debug;
 elapsedMillis last_print_motor_status;
 elapsedMillis last_print_shit;
 
+// Variable to keep track of micros elapsed since last time sent a current
+// command to the right VESC
+elapsedMicros RM_current_command = 0;
+
+// Variable to keep track of time since command to RM was sent
+bool LM_current_command_sent = false;
+
 /**
  * Struct to keep track of PID constants: Should be obsolete with PD class
  **/
@@ -58,31 +65,6 @@ float left_vesc_target = 100; // CW turn by 40 deg
 
 
 /**
-* frequency is in regular freq, not angular freq, so like 1Hz = 1 RPS
-* multiplier cannot be bigger than 3 million
-**/
-int continuousRotationCommand(const float& seconds, const int& multiplier, const float& frequency) {
-	// millis/1000 gives seconds, multiplying by 360 gives rotations
-	// multiplying by frequency gives rotations/sec
-	// %36000 /100 wraps the angle around 360 while at the same time giving
-	// resolution of 0.01 deg
-	return multiplier / 100 * ((int)(frequency*360.0
-		*seconds*100.0)%36000);
-}
-
-/**
-* freq is not angular freq
-**/
-int squareWaveCommand(const float& seconds, const int& multiplier, float frequency, float amplitude) {
-	//
-	int timestamp = (int)(seconds*10000); // in tenths of milliseconds
-	int period = (int)(10000/frequency); // in tenths of milliseconds
-	int half_period = period/2;
-
-	return multiplier * ((timestamp % period)/half_period)
-		*amplitude;
-}
-/**
  * Check and read rotor angle over CAN
  * Returns true and stores value if message received, otherwise ret false
  **/
@@ -111,92 +93,6 @@ bool readAngleOverCAN(FlexCAN& CANrx, float& last_angle_received, int& transmitt
 	return read;
 }
 
-/**
- * Sends a rotor position command over CAN
- * rotor angle must already be multiplied by 1 million
-**/
-void sendMultipliedAngleOverCAN(FlexCAN& CANtx, const uint32_t& multiplied_angle, const int8_t& controller_id) {
-	CAN_message_t msg;
-
-	// use a controller ID of 255 (VESC will accept all 255 ID messages)
-	// CAN_PACKET_SET_POS byte goes on the left of the ID byte
-	msg.id = controller_id | ((int32_t)CAN_PACKET_SET_POS << 8);
-	msg.len = 4; // 4 byte int
-
-	int32_t index=0;
-
-	// set message data buffer to multiplied angle, multiple must be 1million
-	buffer_append_int32(msg.buf, multiplied_angle, &index);
-
-	// send!
-	CANtx.write(msg);
-
-	// toggle LED
-	// digitalWrite(led, !digitalRead(led));
-}
-
-/*
-float current_command = MAX_CURRENT*positionPidControl(last_read_angle,
-		tmotor_state.last_angle,
-		angle_set_point,
-		time_delta,
-		VESC_pd_k);
-*/
-
-// float positionPidControl(const float& angle_now,
-// 	float& angle_last,
-// 	const float& set_point,
-// 	const int& microsTimeDelta,
-// 	const PD_Constants& pd_k) {
-//
-// 	/**
-// 	* fucking weird error:
-// 	* if angle_diff defined and calced up here (before error is calced), the vesc freezes up
-// 	TODO: figure out what the freeze actually is!!
-// 	*/
-//
-// 	float error = utils_angle_difference(angle_now, set_point);
-// 	float angle_diff = utils_angle_difference(angle_now, angle_last);
-//
-//
-// 	float error_deriv = (angle_diff)*1000000.0 /
-// 		(float)microsTimeDelta; // deg /s
-//
-// 	// error_deriv = 0.5*error_deriv + 0.5*last_degps;
-// 	tmotor_state.last_degps = error_deriv;
-//
-// 	angle_last = angle_now;
-//
-// 	// NEGATIVE SIGN IS IMPORTANT
-// 	float res =  -(error*pd_k.Kp + error_deriv*pd_k.Kd);
-// 	res = constrain(res, -1.0, 1.0);
-//
-// 	if(last_send > 50) {
-// 		last_send -= 50;
-//
-// 		Serial.print("O: ");
-// 		Serial.print(res);
-// 		Serial.print(" \tEr: ");
-// 		Serial.print(error);
-// 		Serial.print(" \tw:  ");
-// 		Serial.print(error_deriv);
-// 		Serial.print(" \tKp: ");
-// 		Serial.print(error*pd_k.Kp);
-// 		Serial.print(" \tKd: ");
-// 		Serial.println(error_deriv*pd_k.Kd);
-// 	}
-//
-// 	/**
-// 	* sets a zero current if the speed is less than or greater than 100deg/s
-// 	**/
-// 	if(abs(error_deriv) > 1000) return 0;
-//
-// 	// if(abs(error) < 1.0) {
-// 		// res = constrain(res, -0.5, 0.5);
-// 	// }
-//
-// 	return res;
-// }
 
 void setup() {
 	// init stop button
@@ -316,6 +212,62 @@ void loop() {
 
 			break;
 
+		case RUNNING:
+			print_status();
+
+			if(digitalReadFast(e_stop_pin) == LOW) {
+				teensy_state = ESTOP;
+				break; // redundant
+			} else {
+				// IMPORTANT
+				// read any jump commands
+				process_serial();
+
+
+				/****** Handle any position messages from VESCs ******/
+				float last_read_angle;
+				int transmitter_ID;
+
+				// time to read angle over can is 9 us
+				if(readAngleOverCAN(CANTransceiver, last_read_angle, transmitter_ID)) {
+					switch(transmitter_ID) {
+						case RM_CHANNEL_ID:
+							right_vesc.update_deg(last_read_angle);
+							break;
+						case LM_CHANNEL_ID:
+							left_vesc.update_deg(last_read_angle);
+							break;
+					}
+				}
+				/******* End of handling messages from VESCs ******/
+
+				/****** Send current messages to VESCs *******/
+				// Send position current commands at 1khz aka 1000 us per loop
+				// LM command should be sent halfway between RM commands
+				if(RM_current_command > PID_PERIOD) {
+					RM_current_command = 0;
+					// Start of a new cycle, LM should be sent after PID_PERIOD/2 us
+					LM_current_command_sent = false;
+
+					// START right vesc commands
+					right_vesc.set_position(right_vesc_target);
+
+					// right_vesc.pid_update(180.0); // takes 24 micros to complete
+				}
+
+				// This look should execute halfway between every RM current command
+				if(RM_current_command > PID_PERIOD/2 && !LM_current_command_sent) {
+					LM_current_command_sent = true;
+
+					left_vesc.set_position(left_vesc_target);
+
+					// left_vesc.pid_update(0.0);
+				}
+				/****** End of sending current messages to VESCs *******/
+			}
+			break;
+
+		/* OLD master code
 		// RUNNING state: do whatever PID control etc needs to be done
 		case RUNNING:
 			// print_status();
@@ -352,18 +304,7 @@ void loop() {
 				}
 			}
 			break;
-
-		// operate this loop at 500hz
-		/*
-		if(last_send > 2) {
-			last_send -= 2;
-
-			int32_t command = continuousRotationCommand(millis()/1000.0, 1000000, 0.5);
-
-			sendMultipliedAngleOverCAN(CANTransceiver,command);
-			// Serial.println(command/1000000);
-		}
-		*/
+			*/
 	}
 
 }
