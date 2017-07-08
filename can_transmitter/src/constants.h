@@ -5,11 +5,15 @@
 int led = 13;
 
 // e-stop button pin
-int e_stop_pin = 2;
+int e_stop_pin = 33; // Pin 2 on old teensy 3.2
 bool e_stop_pressed = false;
 
-const float MAX_CURRENT = 30.0;
-const float MAX_ANGULAR_VEL = 500; // deg per sec
+const float MAX_CURRENT = 30.0; // 30 amps seems the max
+const float MAX_ANGULAR_VEL = 500;  // deg per sec
+
+const float KP = -0.07;
+const float KD = -0.001;//-0.0005;
+
 
 const int8_t LM_CHANNEL_ID = 0;
 const int8_t RM_CHANNEL_ID = 1;

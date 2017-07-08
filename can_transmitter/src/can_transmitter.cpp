@@ -1,12 +1,8 @@
 #include <FlexCAN.h>
-
-
 #include "AngularPDController.h"
 #include "constants.h"
-
 #include "buffer.h"
 #include "utils.h"
-
 #include "VESC.h"
 
 long loop_time=0;
@@ -20,8 +16,8 @@ enum controller_state {
 };
 controller_state teensy_state = IDLE;
 
-// Create CAN object
-FlexCAN CANTransceiver(500000); // default is 500k baud
+// Create CAN object, 500mbps, CAN0, use alt tx and alt rx
+FlexCAN CANTransceiver(500000,0,1,1);
 static CAN_message_t msg;
 
 // Longs to keep track of the last time a debugging print message was sent
@@ -45,15 +41,15 @@ VESC left_vesc(0, // offset
 	1, // direction
 	MAX_CURRENT, // max current
 	MAX_ANGULAR_VEL, // max speed
-	-0.07, // Kp
-	-0.001, // Kd //.5 thou default
+	KP, // Kp
+	KD, // Kd //.5 thou default
 	LM_CHANNEL_ID,CANTransceiver); // CAN channel id and flexcan
 VESC right_vesc(0, // offset
 	1, // direction
 	MAX_CURRENT, // max current
 	MAX_ANGULAR_VEL, // max speed
-	-0.07, // Kp
-	-0.001, // Kd
+	KP, // Kp
+	KD, // Kd
 	RM_CHANNEL_ID,CANTransceiver); // CAN channel id and flexcan
 
 // SUPER IMPORTANT PID TARGETS
@@ -335,6 +331,7 @@ void loop() {
 				float last_read_angle;
 				int transmitter_ID;
 
+				// right_vesc.print_debug();
 				if(readAngleOverCAN(CANTransceiver,last_read_angle,transmitter_ID)) { // time to read is 9 us
 					if(transmitter_ID == RM_CHANNEL_ID) {
 
