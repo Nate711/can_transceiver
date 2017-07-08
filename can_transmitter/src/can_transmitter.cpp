@@ -233,9 +233,13 @@ void loop() {
 					switch(transmitter_ID) {
 						case RM_CHANNEL_ID:
 							right_vesc.update_deg(last_read_angle);
+
+
 							break;
 						case LM_CHANNEL_ID:
 							left_vesc.update_deg(last_read_angle);
+
+
 							break;
 					}
 				}
