@@ -356,8 +356,9 @@ void loop() {
 					// Start of a new cycle, LM should be sent after PID_PERIOD/2 us
 					LM_current_command_sent = false;
 
+					Serial.println("send RM");
 					// long then = micros();
-					right_vesc.pid_update(180.0); // takes 24 micros to complete
+					// right_vesc.pid_update(180.0); // takes 24 micros to complete
 					// loop_time = micros() - then;
 				}
 
@@ -365,7 +366,7 @@ void loop() {
 				if(RM_current_command > PID_PERIOD/2 && !LM_current_command_sent) {
 					LM_current_command_sent = true;
 
-					left_vesc.pid_update(0.0);
+					// left_vesc.pid_update(0.0);
 				}
 				/****** End of sending current messages to VESCs *******/
 
