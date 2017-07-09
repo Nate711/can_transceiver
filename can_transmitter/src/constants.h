@@ -23,10 +23,16 @@ const int8_t RM_CHANNEL_ID = 1;
 const float RIGHT_VESC_DOWN = 226;
 const float RIGHT_VESC_UP = 36;
 
+const float RIGHT_VESC_OFFSET = 306.0;
+const int RIGHT_VESC_DIRECTION = -1;
+
 // K side motor
 // increases CCW when facing N side
 const float LEFT_VESC_DOWN = 140;
 const float LEFT_VESC_UP = 320;
+
+const float LEFT_VESC_OFFSET = 314.0;
+const int LEFT_VESC_DIRECTION = 1;
 
 
 const int PID_PERIOD = 1000; // us

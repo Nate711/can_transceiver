@@ -161,7 +161,7 @@ float utils_angle_difference(const float& angle1, const float& angle2) {
 void utils_norm_angle(float& angle) {
   // The while loop method saves 1us
   while(angle < 0.0) angle += 360.0;
-  while(angle > 360.0) angle -= 360.0;
+  while(angle >= 360.0) angle -= 360.0;
 
 	// angle = fmodf(angle, 360.0);
   //

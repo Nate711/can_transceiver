@@ -1,7 +1,50 @@
 #include "VESC.h"
+#include "utils.h"
 // #include <FlexCAN.h>
 
-void utils_norm_angle(float& angle);
+/**
+ * Convert a vesc raw angle to a normalized degree angle,
+ * which are defined as the angle
+ * from the horizontal to the motor with positive downward, to
+ **/
+float VESC::vesc_to_normalized_angle(const float& raw_angle) {
+  float normalized = raw_angle;
+
+  // correct for encoder direction, ie if + angle is CW or CCW
+  if(encoder_direction == -1) {
+    normalized = utils_angle_difference(0, normalized);
+  }
+
+  // add encoder offset
+  normalized += encoder_offset;
+
+  // normalize to [0 360)
+  utils_norm_angle(normalized);
+
+  return normalized;
+}
+
+/**
+ * Converts normalized angle to raw vesc angle
+ * @param  normalized_angle [description]
+ * @return                  [description]
+ */
+float VESC::normalized_to_vesc_angle(const float& normalized_angle) {
+  float raw_angle = normalized_angle;
+
+  // subtract offset
+  raw_angle -= encoder_offset;
+
+  // reverse if opposite direction
+  if(encoder_direction == -1) {
+    raw_angle = utils_angle_difference(0, raw_angle);
+  }
+
+  // normalize angle to 0 to 360
+  utils_norm_angle(raw_angle);
+
+  return raw_angle;
+}
 
 /**
  * Constructs VESC object with initial params
@@ -28,17 +71,24 @@ VESC::VESC(float encoder_offset1,
   // the first time_delta will be large and will give small deg per sec which is ok
   time_last_angle_read = 0;
 
-  true_deg = 0.0;
+  vesc_angle = 0.0;
   true_degps = 0;
+}
+
+/**
+ * Compute PID output and send to VESC given a normalized angle set
+ * point. Uses last given position values.
+ * @param set_point normalized angle set point
+ */
+void VESC::pid_update_normalized(const float& set_point) {
+  pid_update(normalized_to_vesc_angle(set_point));
 }
 
 /**
  * Compute PID output and send to VESC. Uses last given values
  */
-
 void VESC::pid_update(const float& set_point) {
-
-  float error = utils_angle_difference(read_corrected_deg(),set_point);
+  float error = utils_angle_difference(vesc_angle,set_point);
   float cur_command = max_current *
             pos_controller.compute_command(error,last_time_delta_micros);
 
@@ -49,12 +99,14 @@ void VESC::pid_update(const float& set_point) {
 /**
  * Updates the VESC objects knowledge of the motor angle
  * Takes between 4 and 5 us with while loop norm angle
+ * @param raw_deg measured position in raw vesc angle coordinates.
+ * automatically normalizes the given angle (no > 180deg moves)
  */
 void VESC::update_deg(const float& raw_deg) {
   unsigned long now_time = micros();
 
-  // Apply correction formula
-  float corrected = (encoder_direction==1)?raw_deg:(-raw_deg) + encoder_offset;
+  float corrected = raw_deg;
+
   // 26 us without this line, 31 with this line = 5 us time
   utils_norm_angle(corrected);
 
@@ -71,7 +123,7 @@ void VESC::update_deg(const float& raw_deg) {
   // this line takes 6-8 us
   if(last_time_delta_micros==0) last_time_delta_micros = 1;
 
-  true_degps = (int)(1000000*utils_angle_difference(corrected,true_deg)) /
+  true_degps = (int)(1000000*utils_angle_difference(corrected,vesc_angle)) /
                                         (int)(last_time_delta_micros);
 
 
@@ -80,14 +132,14 @@ void VESC::update_deg(const float& raw_deg) {
   //                                     (last_time_delta/1000000.0);
 
   // Update degree state
-  true_deg = corrected;
+  vesc_angle = corrected;
 }
 
 /**
  * Returns the VESC object's last known knowledge of motor position
  */
-float VESC::read_corrected_deg() {
-  return true_deg;
+float VESC::read_vesc_angle() {
+  return vesc_angle;
 }
 
 float VESC::read_corrected_degps() {
@@ -113,11 +165,22 @@ void VESC::set_pid_position_constants(const float& kp, const float& ki, const fl
 	CANtx.write(msg);
 }
 
+
+void VESC::set_position_normalized(const float& pos) {
+  set_position(normalized_to_vesc_angle(pos));
+}
+
 /**
 * Sends position command to the VESC
 **/
-
+/**
+ * Sends CAN position command to the VESC
+ * @param pos desired position, automatically normalizes it
+ */
 void VESC::set_position(const float& pos) {
+  float norm_pos = pos;
+  utils_norm_angle(norm_pos);
+
   CAN_message_t msg;
   int MULTIPLIER = 1000000;
   msg.id = controller_channel_ID | ((int32_t) CAN_PACKET_SET_POS<<8);

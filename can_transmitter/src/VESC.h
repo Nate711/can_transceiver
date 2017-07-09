@@ -23,16 +23,15 @@ private:
   // it might be a bad idea to have direction multipliers... think about it
   int encoder_direction;
 
+	// CAN bus channel ID
   int8_t controller_channel_ID;
 
   float max_current = 10; // amps
   float max_speed = 2000; // deg per sec
 
-  // corrected position of the motor
-  float true_deg=0;
-
+  // corrected position and velocity of the motor
+  float vesc_angle=0;
   float true_degps=0;
-
 
   // FlexCAN object to use for comms
   FlexCAN& CANtx;
@@ -40,11 +39,12 @@ private:
   // PID object to control angular position
   AngularPDController pos_controller;
 
-  //
+  // keep track of elapsed milliseconds since last prints
   elapsedMillis last_print_debug=0;
-
 	elapsedMillis print_w=0;
 
+	float vesc_to_normalized_angle(const float& raw_angle);
+	float normalized_to_vesc_angle(const float& normalized_angle);
 
 public:
   VESC(float encoder_offset1,
@@ -56,7 +56,7 @@ public:
             FlexCAN& cantx);
 
   void update_deg(const float& deg);
-  float read_corrected_deg();
+  float read_vesc_angle();
 	float read_corrected_degps();
 
 	void reset(int sleep_time);
@@ -65,8 +65,10 @@ public:
 
 	void set_pid_position_constants(const float& kp, const float& ki, const float& kd);
 
+	void set_position_normalized(const float& pos);
 	void set_position(const float& pos);
 
+	void pid_update_normalized(const float& set_point);
   void pid_update(const float& set_point);
 
   void print_debug();

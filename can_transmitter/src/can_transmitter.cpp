@@ -34,25 +34,17 @@ elapsedMicros RM_current_command = 0;
 // Variable to keep track of time since command to RM was sent
 bool LM_current_command_sent = false;
 
-/**
- * Struct to keep track of PID constants: Should be obsolete with PD class
- **/
-struct PD_Constants {
-	float Kp;
-	// float Ki;
-	float Kd;
-} VESC_pd_k;
 
 // VESC motor objects
-VESC left_vesc(0, // offset
-	1, // direction
+VESC left_vesc(LEFT_VESC_OFFSET, // offset
+	LEFT_VESC_DIRECTION, // direction
 	MAX_CURRENT, // max current
 	MAX_ANGULAR_VEL, // max speed
 	KP, // Kp
 	KD, // Kd //.5 thou default
 	LM_CHANNEL_ID,CANTransceiver); // CAN channel id and flexcan
-VESC right_vesc(0, // offset
-	1, // direction
+VESC right_vesc(RIGHT_VESC_OFFSET, // offset
+	RIGHT_VESC_DIRECTION, // direction
 	MAX_CURRENT, // max current
 	MAX_ANGULAR_VEL, // max speed
 	KP, // Kp
@@ -61,7 +53,22 @@ VESC right_vesc(0, // offset
 
 // SUPER IMPORTANT PID TARGETS
 float right_vesc_target = 180; // CCW turn by 40deg
+/**
+ * 216 is all the way down, so 36 should be all the way up, and 126 should be halfway down
+ * Mapping: angles are positive measured from the horizontal looking
+ * at the K side (looking down the supporting rod)
+ * 126 -> 180, 36 -> -90, 216 -> 90
+ * => equation is corrected angle is measuredc angle - 126
+ * equivalent to - measured angle - 54 (same as + 306)
+ **/
+
 float left_vesc_target = 100; // CW turn by 40 deg
+/**
+ * 130 is all the way down, so -50 (310) should be all the way up,
+ * and 40 should be halfway down
+ * Mapping: 40 -> 0, -50 -> 270 (-90), 130 -> 90
+ * equation is + measured angle - 40 (same as + 320)
+ **/
 
 
 /**
@@ -164,8 +171,8 @@ void process_serial() {
 				break;
 
 			case 'd': // vertically down position
-				right_vesc_target = 226-10;
-				left_vesc_target = 140-10;
+				right_vesc_target = 226-10; // 216
+				left_vesc_target = 140-10; // 130
 			default:
 				break;
 		}
@@ -265,8 +272,10 @@ void loop() {
 				if(RM_current_command > PID_PERIOD/2 && !LM_current_command_sent) {
 					LM_current_command_sent = true;
 
-					left_vesc.set_position(left_vesc_target);
-					left_vesc.set_pid_position_constants(0.03, 0.0, 0.0002);
+					left_vesc.set_position_normalized(0);
+
+					// TODO: should also put max current in this message! then have full control
+					// left_vesc.set_pid_position_constants(0.05, 0.0, 0.0002);
 
 					// left_vesc.pid_update(0.0);
 				}
