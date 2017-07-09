@@ -94,6 +94,25 @@ float VESC::read_corrected_degps() {
   return true_degps;
 }
 
+
+void VESC::set_pid_position_constants(const float& kp, const float& ki, const float& kd) {
+  CAN_message_t msg;
+  int MULTIPLIER = 100000; // max valu is .3 for any value (2^15 / 100000)
+  msg.id = controller_channel_ID | ((int32_t) CAN_PACKET_SET_P_PID_K<<8);
+  msg.len = 8;
+  int32_t index = 0;
+  buffer_append_int16(msg.buf,(int16_t)(kp*MULTIPLIER),&index);
+  buffer_append_int16(msg.buf,(int16_t)(ki*MULTIPLIER),&index);
+  buffer_append_int16(msg.buf,(int16_t)(kd*MULTIPLIER),&index);
+  /*
+	WACKO fix, doesn't work without the wait
+	*/
+	long time = micros();
+	while(time - micros() < 1) {}
+
+	CANtx.write(msg);
+}
+
 /**
 * Sends position command to the VESC
 **/

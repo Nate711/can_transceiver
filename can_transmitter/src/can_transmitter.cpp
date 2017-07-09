@@ -256,6 +256,8 @@ void loop() {
 					// START right vesc commands
 					right_vesc.set_position(right_vesc_target);
 
+
+
 					// right_vesc.pid_update(180.0); // takes 24 micros to complete
 				}
 
@@ -264,6 +266,7 @@ void loop() {
 					LM_current_command_sent = true;
 
 					left_vesc.set_position(left_vesc_target);
+					left_vesc.set_pid_position_constants(0.03, 0.0, 0.0002);
 
 					// left_vesc.pid_update(0.0);
 				}

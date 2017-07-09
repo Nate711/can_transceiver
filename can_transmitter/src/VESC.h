@@ -63,6 +63,8 @@ public:
 
   void set_current(const float& current);
 
+	void set_pid_position_constants(const float& kp, const float& ki, const float& kd);
+
 	void set_position(const float& pos);
 
   void pid_update(const float& set_point);
