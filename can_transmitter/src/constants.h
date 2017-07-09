@@ -34,7 +34,7 @@ const float LEFT_VESC_UP = 320;
 const float LEFT_VESC_OFFSET = 314.0;
 const int LEFT_VESC_DIRECTION = 1;
 
-
-const int PID_PERIOD = 1000; // us
+// 2000us period means 500hz
+const int UPDATE_PERIOD = 2000; // us
 
 #endif

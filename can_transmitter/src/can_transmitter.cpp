@@ -151,28 +151,23 @@ void process_serial() {
 		// Process each different command
 		switch(c) {
 			case 'p': // prime for jump
-				right_vesc_target = 76;
-				left_vesc_target = 340;
+				right_vesc_target = -135;
+				left_vesc_target = -45;
 				break;
 
 			case 'm': // midway jump position
-				right_vesc_target = 130;
-				left_vesc_target = 40;
+				right_vesc_target = 180;
+				left_vesc_target = 0;
 				break;
 
 			case 'j': // jump position
-				right_vesc_target = 188;
-				left_vesc_target = 100;
-				break;
-
-			case 'r': // neutral stance position
-				right_vesc_target = 186;
-				left_vesc_target = 120;
+				right_vesc_target = 105;
+				left_vesc_target = 75;
 				break;
 
 			case 'd': // vertically down position
-				right_vesc_target = 226-10; // 216
-				left_vesc_target = 140-10; // 130
+				right_vesc_target = 90; // 216
+				left_vesc_target = 90; // 130
 			default:
 				break;
 		}
@@ -255,24 +250,22 @@ void loop() {
 				/****** Send current messages to VESCs *******/
 				// Send position current commands at 1khz aka 1000 us per loop
 				// LM command should be sent halfway between RM commands
-				if(RM_current_command > PID_PERIOD) {
+				if(RM_current_command > UPDATE_PERIOD) {
 					RM_current_command = 0;
 					// Start of a new cycle, LM should be sent after PID_PERIOD/2 us
 					LM_current_command_sent = false;
 
 					// START right vesc commands
-					right_vesc.set_position(right_vesc_target);
-
-
+					right_vesc.set_position_normalized(right_vesc_target);
 
 					// right_vesc.pid_update(180.0); // takes 24 micros to complete
 				}
 
 				// This look should execute halfway between every RM current command
-				if(RM_current_command > PID_PERIOD/2 && !LM_current_command_sent) {
+				if(RM_current_command > UPDATE_PERIOD/2 && !LM_current_command_sent) {
 					LM_current_command_sent = true;
 
-					left_vesc.set_position_normalized(0);
+					left_vesc.set_position_normalized(left_vesc_target);
 
 					// TODO: should also put max current in this message! then have full control
 					// left_vesc.set_pid_position_constants(0.05, 0.0, 0.0002);
