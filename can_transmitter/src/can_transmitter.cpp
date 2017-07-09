@@ -10,7 +10,7 @@ long loop_time=0;
 // Teensy State variable
 enum controller_state {
 	IDLE,
-	IDLE_BUTTON_DOWN,
+	STAGING,
 	RUNNING,
 	ESTOP
 };
@@ -100,10 +100,42 @@ bool readAngleOverCAN(FlexCAN& CANrx, float& last_angle_received, int& transmitt
 	return read;
 }
 
+// variables for debouncing
+// keeps track of when the state machine went from idle to staging
+long idle_to_staging;
+// keeps track of when staging to running
+long staging_to_running;
+
+void E_STOP_ISR() {
+	switch(teensy_state) {
+	case IDLE:
+		teensy_state = STAGING;
+		idle_to_staging = millis();
+		break;
+	case STAGING:
+		// checks that went from idle to staging more than 500ms ago
+		// to ignore button bouncing
+		if(millis() - idle_to_staging > 500) {
+			teensy_state = RUNNING;
+			staging_to_running = millis();
+		}
+		break;
+	case RUNNING:
+		// checks that went from staging to running more than 500ms ago
+		// to ignore button bouncing
+		if(millis() - staging_to_running > 500) {
+			teensy_state = ESTOP;
+		}
+		break;
+	case ESTOP:
+		break;
+	}
+}
 
 void setup() {
-	// init stop button
+	// init stop button and interrupt
 	pinMode(e_stop_pin,INPUT_PULLUP);
+	attachInterrupt(e_stop_pin, E_STOP_ISR, RISING);
 
   // init CAN bus
   CANTransceiver.begin();
@@ -123,8 +155,8 @@ void print_status() {
 			case IDLE:
 				Serial.println("IDLE");
 				break;
-			case IDLE_BUTTON_DOWN:
-				Serial.println("IDLE BUTTON DOWN");
+			case STAGING:
+				Serial.println("STAGING");
 				break;
 			case ESTOP:
 				Serial.println("E-STOP");
@@ -180,26 +212,17 @@ void loop() {
 	// State machine switch control
 	switch(teensy_state) {
 
-		// IDLE state: don't do anything but check for button press
+		// IDLE state: don't do anything
 		case IDLE:
 			print_status();
-		  if(digitalReadFast(e_stop_pin) == LOW) {
-				teensy_state = IDLE_BUTTON_DOWN;
-			}
 			break;
-		// IDLE Button Down State: wait until the button is released and then start
-		// the running state
-		case IDLE_BUTTON_DOWN:
+
+		// STAGING state: wait until 2nd button press then go into running state
+		case STAGING:
 			print_status();
-		  if(digitalReadFast(e_stop_pin) == HIGH) {
-				teensy_state = RUNNING;
 
-				// clear serial data so running subroutine doesn't see it
-				Serial.clear();
-
-				delay(500);
-
-			}
+			Serial.clear();
+			delay(500);
 			break;
 
 		// ESTOP: the e-stop button was pressed so stop sending current to the motors!
@@ -217,63 +240,59 @@ void loop() {
 		case RUNNING:
 			print_status();
 
-			if(digitalReadFast(e_stop_pin) == LOW) {
-				teensy_state = ESTOP;
-				break; // redundant
-			} else {
-				// IMPORTANT
-				// read any jump commands
-				process_serial();
+			// IMPORTANT
+			// read any jump commands
+			process_serial();
 
 
-				/****** Handle any position messages from VESCs ******/
-				float last_read_angle;
-				int transmitter_ID;
+			/****** Handle any position messages from VESCs ******/
+			float last_read_angle;
+			int transmitter_ID;
 
-				// time to read angle over can is 9 us
-				if(readAngleOverCAN(CANTransceiver, last_read_angle, transmitter_ID)) {
-					switch(transmitter_ID) {
-						case RM_CHANNEL_ID:
-							right_vesc.update_deg(last_read_angle);
-
-
-							break;
-						case LM_CHANNEL_ID:
-							left_vesc.update_deg(last_read_angle);
+			// time to read angle over can is 9 us
+			if(readAngleOverCAN(CANTransceiver, last_read_angle, transmitter_ID)) {
+				switch(transmitter_ID) {
+					case RM_CHANNEL_ID:
+						right_vesc.update_deg(last_read_angle);
 
 
-							break;
-					}
+						break;
+					case LM_CHANNEL_ID:
+						left_vesc.update_deg(last_read_angle);
+
+
+						break;
 				}
-				/******* End of handling messages from VESCs ******/
-
-				/****** Send current messages to VESCs *******/
-				// Send position current commands at 1khz aka 1000 us per loop
-				// LM command should be sent halfway between RM commands
-				if(RM_current_command > UPDATE_PERIOD) {
-					RM_current_command = 0;
-					// Start of a new cycle, LM should be sent after PID_PERIOD/2 us
-					LM_current_command_sent = false;
-
-					// START right vesc commands
-					right_vesc.set_position_normalized(right_vesc_target);
-
-					// right_vesc.pid_update(180.0); // takes 24 micros to complete
-				}
-
-				// This look should execute halfway between every RM current command
-				if(RM_current_command > UPDATE_PERIOD/2 && !LM_current_command_sent) {
-					LM_current_command_sent = true;
-
-					left_vesc.set_position_normalized(left_vesc_target);
-
-					// TODO: should also put max current in this message! then have full control
-					// left_vesc.set_pid_position_constants(0.05, 0.0, 0.0002);
-
-					// left_vesc.pid_update(0.0);
-				}
-				/****** End of sending current messages to VESCs *******/
 			}
+			/******* End of handling messages from VESCs ******/
+
+			/****** Send current messages to VESCs *******/
+			// Send position current commands at 1khz aka 1000 us per loop
+			// LM command should be sent halfway between RM commands
+			if(RM_current_command > UPDATE_PERIOD) {
+				RM_current_command = 0;
+				// Start of a new cycle, LM should be sent after PID_PERIOD/2 us
+				LM_current_command_sent = false;
+
+				// START right vesc commands
+				right_vesc.set_position_normalized(right_vesc_target);
+
+				// right_vesc.pid_update(180.0); // takes 24 micros to complete
+			}
+
+			// This look should execute halfway between every RM current command
+			if(RM_current_command > UPDATE_PERIOD/2 && !LM_current_command_sent) {
+				LM_current_command_sent = true;
+
+				left_vesc.set_position_normalized(left_vesc_target);
+
+				// TODO: should also put max current in this message! then have full control
+				// left_vesc.set_pid_position_constants(0.05, 0.0, 0.0002);
+
+				// left_vesc.pid_update(0.0);
+			}
+			/****** End of sending current messages to VESCs *******/
+
 			break;
 
 		/* OLD master code
