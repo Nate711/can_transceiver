@@ -16,6 +16,14 @@ enum controller_state {
 };
 controller_state teensy_state = IDLE;
 
+enum running_state {
+	FLIGHT_A, // flight going up; leg behind
+	FLIGHT_B, // flight going down; leg in front
+	STANCE_A, // stance going down; leg in front
+	STANCE_B // stance going up; leg behind
+};
+running_state teensy_running_state = FLIGHT_B;
+
 // Create CAN object, 500mbps, CAN0, use alt tx and alt rx
 FlexCAN CANTransceiver(500000,0,1,1);
 static CAN_message_t msg;
@@ -155,14 +163,32 @@ void print_status() {
 			case IDLE:
 				Serial.println("IDLE");
 				break;
+
 			case STAGING:
 				Serial.println("STAGING");
 				break;
+
 			case ESTOP:
 				Serial.println("E-STOP");
 				break;
+
 			case RUNNING:
-				Serial.println("RUNNING!");
+				Serial.print("RUNNING: ");
+
+				switch(teensy_running_state) {
+				case FLIGHT_A:
+					Serial.println("FLIGHT_A");
+					break;
+				case FLIGHT_B:
+					Serial.println("FLIGHT_B");
+					break;
+				case STANCE_A:
+					Serial.println("STANCE_A");
+					break;
+				case STANCE_B:
+					Serial.println("STANCE_B");
+					break;
+				}
 				break;
 		}
 	}
