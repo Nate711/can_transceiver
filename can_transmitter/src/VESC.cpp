@@ -146,6 +146,25 @@ float VESC::read_corrected_degps() {
   return true_degps;
 }
 
+void VESC::set_norm_position_target(float target) {
+  normalized_position_target = target;
+}
+
+float VESC::get_norm_position_target() {
+  return normalized_position_target;
+}
+
+void VESC::update_vesc_position_pid_constants(const float& kp, const float& ki, const float& kd) {
+  if(vesc_kp == kp && vesc_ki == ki && vesc_kd == kd) {
+    // Nothing to do, same values as last time
+  } else {
+    // Update internal memory and send CAN message
+    vesc_kp = kp;
+    vesc_ki = ki;
+    vesc_kd = kd;
+    set_pid_position_constants(vesc_kp,vesc_ki,vesc_kd);
+  }
+}
 
 void VESC::set_pid_position_constants(const float& kp, const float& ki, const float& kd) {
   CAN_message_t msg;
@@ -169,6 +188,11 @@ void VESC::set_pid_position_constants(const float& kp, const float& ki, const fl
 void VESC::set_position_normalized(const float& pos) {
   set_position(normalized_to_vesc_angle(pos));
 }
+
+void VESC::set_position_normalized() {
+  set_position_normalized(normalized_position_target);
+}
+
 
 /**
 * Sends position command to the VESC
