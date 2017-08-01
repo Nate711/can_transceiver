@@ -158,15 +158,19 @@ void VESC::update_vesc_position_pid_constants(const float& kp, const float& ki, 
   if(vesc_kp == kp && vesc_ki == ki && vesc_kd == kd) {
     // Nothing to do, same values as last time
   } else {
-    // Update internal memory and send CAN message
+    // Update internal memory and set flag to send CAN message
     vesc_kp = kp;
     vesc_ki = ki;
     vesc_kd = kd;
-    set_pid_position_constants(vesc_kp,vesc_ki,vesc_kd);
+    update_pid_constants = true;
   }
 }
 
-void VESC::set_pid_position_constants(const float& kp, const float& ki, const float& kd) {
+void VESC::set_position_pid_constants() {
+  set_position_pid_constants(vesc_kp, vesc_ki, vesc_kd);
+}
+
+void VESC::set_position_pid_constants(const float& kp, const float& ki, const float& kd) {
   CAN_message_t msg;
   int MULTIPLIER = 100000; // max valu is .3 for any value (2^15 / 100000)
   msg.id = controller_channel_ID | ((int32_t) CAN_PACKET_SET_P_PID_K<<8);
@@ -184,6 +188,12 @@ void VESC::set_pid_position_constants(const float& kp, const float& ki, const fl
 	CANtx.write(msg);
 }
 
+void VESC::set_normalized_position_with_constants() {
+  if(update_pid_constants) {
+    set_position_pid_constants();
+  }
+  set_position_normalized();
+}
 
 void VESC::set_position_normalized(const float& pos) {
   set_position(normalized_to_vesc_angle(pos));

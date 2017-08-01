@@ -18,6 +18,9 @@ private:
 	// VESC position pid constants
 	float vesc_kp=0,vesc_ki=0,vesc_kd=0;
 
+	// Flag to tell if position pid constants need to be sent to VESC
+	bool update_pid_constants = true;
+
   // Holds time in micros of the last time the object got an angle measurement
   // It's important that this time is consistent
 	long time_last_angle_read;
@@ -107,8 +110,8 @@ public:
 	float get_norm_position_target();
 
 	/**
-	 * Updates internal memory of vesc pid constants. Sends CAN message to update
-	 * PID constants if these are new values.
+	 * Updates internal memory of vesc pid constants and sets flag to send CAN
+	 * message with new values.
 	 * @param kp [description]
 	 * @param ki [description]
 	 * @param kd [description]
@@ -121,7 +124,12 @@ public:
 	 * @param ki [description]
 	 * @param kd [description]
 	 */
-	void set_pid_position_constants(const float& kp, const float& ki, const float& kd);
+	void set_position_pid_constants(const float& kp, const float& ki, const float& kd);
+
+	/**
+	 * Sends CAN message using stored pid constants to the VESC
+	 */
+	void set_position_pid_constants();
 
 	/**
 	 * Sends position CAN message to VESC given a normalized angle
@@ -138,6 +146,12 @@ public:
 	 * @param pos [description]
 	 */
 	void set_position(const float& pos);
+
+	/**
+	 * Sends CAN message to VESC with position and pid constants if pid constants
+	 * need updating.
+	 */
+	void set_normalized_position_with_constants();
 
 	/**
 	 * Uses teensy pid to send current command to VESC given a normalized
