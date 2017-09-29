@@ -218,7 +218,7 @@ void VESC::set_position(const float& pos) {
   CAN_message_t msg;
   int MULTIPLIER = 1000000;
   msg.id = controller_channel_ID | ((int32_t) CAN_PACKET_SET_POS<<8);
-  msg.len = 4;
+  msg.len = 8;
   int32_t index = 0;
   buffer_append_int32(msg.buf,(int32_t)(pos*MULTIPLIER),&index);
   /*

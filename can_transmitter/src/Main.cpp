@@ -4,83 +4,7 @@
 #include "buffer.h"
 #include "utils.h"
 #include "VESC.h"
-
-long loop_time=0;
-
-// Teensy State variable
-enum controller_state {
-	IDLE,
-	STAGING,
-	RUNNING,
-	ESTOP
-};
-controller_state teensy_state = IDLE;
-
-enum running_state {
-	// FLIGHT_A, // flight going up; leg behind
-	// FLIGHT_B, // flight going down; leg in front
-	// STANCE_A, // stance going down; leg in front
-	// STANCE_B, // stance going up; leg behind
-	HOP_UP,
-	HOP_DOWN
-};
-// running_state teensy_running_state = FLIGHT_B;
-running_state teensy_running_state = HOP_DOWN;
-
-// Create CAN object, 500mbps, CAN0, use alt tx and alt rx
-FlexCAN CANTransceiver(500000,0,1,1);
-static CAN_message_t msg;
-
-// Longs to keep track of the last time a debugging print message was sent
-// and last time
-elapsedMillis last_send;
-elapsedMillis last_print_debug;
-elapsedMillis last_print_motor_status;
-elapsedMillis last_print_shit;
-
-// Variable to keep track of micros elapsed since last time sent a current
-// command to the right VESC
-elapsedMicros RM_current_command = 0;
-
-// Variable to keep track of time since command to RM was sent
-bool LM_current_command_sent = false;
-
-
-// VESC motor objects
-VESC left_vesc(LEFT_VESC_OFFSET, // offset
-	LEFT_VESC_DIRECTION, // direction
-	MAX_CURRENT, // max current
-	MAX_ANGULAR_VEL, // max speed
-	KP, // Kp
-	KD, // Kd //.5 thou default
-	LM_CHANNEL_ID,CANTransceiver); // CAN channel id and flexcan
-VESC right_vesc(RIGHT_VESC_OFFSET, // offset
-	RIGHT_VESC_DIRECTION, // direction
-	MAX_CURRENT, // max current
-	MAX_ANGULAR_VEL, // max speed
-	KP, // Kp
-	KD, // Kd
-	RM_CHANNEL_ID,CANTransceiver); // CAN channel id and flexcan
-
-// SUPER IMPORTANT PID TARGETS => now inside VESC object
-// float right_vesc_target = 180; // CCW turn by 40deg
-/**
- * 216 is all the way down, so 36 should be all the way up, and 126 should be halfway down
- * Mapping: angles are positive measured from the horizontal looking
- * at the K side (looking down the supporting rod)
- * 126 -> 180, 36 -> -90, 216 -> 90
- * => equation is corrected angle is measuredc angle - 126
- * equivalent to - measured angle - 54 (same as + 306)
- **/
-
-// float left_vesc_target = 100; // CW turn by 40 deg
-/**
- * 130 is all the way down, so -50 (310) should be all the way up,
- * and 40 should be halfway down
- * Mapping: 40 -> 0, -50 -> 270 (-90), 130 -> 90
- * equation is + measured angle - 40 (same as + 320)
- **/
-
+#include "globals.h"
 
 /**
  * Check and read rotor angle over CAN
@@ -107,6 +31,14 @@ bool readAngleOverCAN(FlexCAN& CANrx, float& last_angle_received, int& transmitt
 
 		// parse a 32bit float from the can message data buffer
 		last_angle_received = buffer_get_float32(msg.buf, 100000, &index);
+
+		static elapsedMillis lastCANPrint = 0;
+		if(lastCANPrint > 500) {
+			lastCANPrint = 0;
+			Serial.print(transmitter_ID);
+			Serial.print(" ");
+			Serial.println(last_angle_received);
+		}
   }
 	return read;
 }
@@ -143,63 +75,57 @@ void E_STOP_ISR() {
 	}
 }
 
-void setup() {
-	// init stop button and interrupt
-	pinMode(e_stop_pin,INPUT_PULLUP);
-	attachInterrupt(e_stop_pin, E_STOP_ISR, RISING);
-
-  // init CAN bus
-  CANTransceiver.begin();
-  pinMode(led, OUTPUT);
-	digitalWrite(led, HIGH);
-  delay(1000);
-  Serial.println("CAN Transmitter Initialized");
-}
-
-
 void print_status() {
 	if(last_print_debug > 100) {
 		last_print_debug -= 100;
 
-		Serial.print("State: ");
-		switch(teensy_state) {
-			case IDLE:
-				Serial.println("IDLE");
-				break;
+		if(last_printed_state != teensy_state
+			|| (teensy_state == RUNNING && last_running_state != teensy_running_state)) {
 
-			case STAGING:
-				Serial.println("STAGING");
-				break;
-
-			case ESTOP:
-				Serial.println("E-STOP");
-				break;
-
-			case RUNNING:
-				Serial.print("RUNNING: ");
-
-				switch(teensy_running_state) {
-				case HOP_UP:
-					Serial.println("HOP_UP");
-					break;
-				case HOP_DOWN:
-					Serial.println("HOP_DOWN");
+			last_printed_state = teensy_state;
+			Serial.print("State: ");
+			switch(teensy_state) {
+				case IDLE:
+					Serial.println("IDLE");
 					break;
 
-				// case FLIGHT_A:
-				// 	Serial.println("FLIGHT_A");
-				// 	break;
-				// case FLIGHT_B:
-				// 	Serial.println("FLIGHT_B");
-				// 	break;
-				// case STANCE_A:
-				// 	Serial.println("STANCE_A");
-				// 	break;
-				// case STANCE_B:
-				// 	Serial.println("STANCE_B");
-				// 	break;
+				case STAGING:
+					Serial.println("STAGING");
+					break;
+
+				case ESTOP:
+					Serial.println("E-STOP");
+					break;
+
+				case RUNNING:
+					last_running_state = teensy_running_state;
+					Serial.print("RUNNING: ");
+					switch(teensy_running_state) {
+					case HOP_UP:
+						Serial.println("HOP_UP");
+						break;
+					case HOP_DOWN:
+						Serial.println("HOP_DOWN");
+						break;
+					default:
+						break;
+
+					// case FLIGHT_A:
+					// 	Serial.println("FLIGHT_A");
+					// 	break;
+					// case FLIGHT_B:
+					// 	Serial.println("FLIGHT_B");
+					// 	break;
+					// case STANCE_A:
+					// 	Serial.println("STANCE_A");
+					// 	break;
+					// case STANCE_B:
+					// 	Serial.println("STANCE_B");
+					// 	break;
+					}
+					break;
 				}
-				break;
+
 		}
 	}
 }
@@ -271,6 +197,19 @@ void process_CAN_messages() {
 	}
 }
 
+void setup() {
+	// init stop button and interrupt
+	pinMode(e_stop_pin,INPUT_PULLUP);
+	attachInterrupt(e_stop_pin, E_STOP_ISR, RISING);
+
+  // init CAN bus
+  CANTransceiver.begin();
+  pinMode(led, OUTPUT);
+	digitalWrite(led, HIGH);
+  delay(1000);
+  Serial.println("CAN Transmitter Initialized");
+}
+
 void loop() {
 	// State machine switch control
 	switch(teensy_state) {
@@ -303,8 +242,7 @@ void loop() {
 		case RUNNING:
 			print_status();
 
-			// IMPORTANT
-			// read any jump commands
+			// IMPORTANT: read any jump commands
 			process_serial();
 
 			process_CAN_messages();
@@ -320,8 +258,8 @@ void loop() {
 				// 25 deg from vertical
 				left_vesc.set_norm_position_target(65);
 				right_vesc.set_norm_position_target(115);
-
-				// high gain pid constants
+				//
+				// // high gain pid constants
 				left_vesc.update_vesc_position_pid_constants(0.05,0,0.0004);
 				right_vesc.update_vesc_position_pid_constants(0.05,0,0.0004);
 
@@ -335,13 +273,13 @@ void loop() {
 				// 15 deg from vertical
 				left_vesc.set_norm_position_target(75);
 				right_vesc.set_norm_position_target(105);
-
+				//
 				left_vesc.update_vesc_position_pid_constants(0.001,0,0.0001);
 				right_vesc.update_vesc_position_pid_constants(0.001,0,0.0001);
 
 			  // AUTOMODE: transition to HOP_UP when leg retracted
 				break;
-
+			/*
 			// case FLIGHT_A: // flight going up; leg behind
 			// 	// break;
 			// case FLIGHT_B: // flight going down; leg in front
@@ -350,9 +288,13 @@ void loop() {
 			// case STANCE_A: // stance going down; leg in front
 			// 	// break;
 			// case STANCE_B: // stance going up; leg behind
-				break;
-			}
+			// break;
+			*/
 
+			default:
+				break;
+
+			}
 
 			/****** Send current messages to VESCs *******/
 			// Send position current commands at 1khz aka 1000 us per loop
@@ -363,21 +305,19 @@ void loop() {
 				LM_current_command_sent = false;
 
 				// START right vesc commands
-				right_vesc.set_normalized_position_with_constants();
+				// right_vesc.set_normalized_position_with_constants();
+				right_vesc.set_current(1.0);
 
-				// right_vesc.pid_update(180.0); // takes 24 micros to complete
 			}
 
 			// This should execute halfway between every RM current command
 			if(RM_current_command > UPDATE_PERIOD/2 && !LM_current_command_sent) {
 				LM_current_command_sent = true;
 
-				left_vesc.set_normalized_position_with_constants();
+				left_vesc.set_current(1.0);
+				// left_vesc.set_normalized_position_with_constants();
 
 				// TODO: should also put max current in this message! then have full control
-				// left_vesc.set_pid_position_constants(0.05, 0.0, 0.0002);
-
-				// left_vesc.pid_update(0.0);
 			}
 			/****** End of sending current messages to VESCs *******/
 
