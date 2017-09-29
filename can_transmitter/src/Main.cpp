@@ -32,13 +32,14 @@ bool readAngleOverCAN(FlexCAN& CANrx, float& last_angle_received, int& transmitt
 		// parse a 32bit float from the can message data buffer
 		last_angle_received = buffer_get_float32(msg.buf, 100000, &index);
 
-		static elapsedMillis lastCANPrint = 0;
-		if(lastCANPrint > 500) {
-			lastCANPrint = 0;
-			Serial.print(transmitter_ID);
-			Serial.print(" ");
-			Serial.println(last_angle_received);
-		}
+		// Print angle readings from the VESCs
+		// static elapsedMillis lastCANPrint = 0;
+		// if(lastCANPrint > 500) {
+		// 	lastCANPrint = 0;
+		// 	Serial.print(transmitter_ID);
+		// 	Serial.print(" ");
+		// 	Serial.println(last_angle_received);
+		// }
   }
 	return read;
 }
@@ -256,8 +257,12 @@ void loop() {
 				// set high pid constants
 
 				// 25 deg from vertical
-				left_vesc.set_norm_position_target(65);
-				right_vesc.set_norm_position_target(115);
+				// left_vesc.set_norm_position_target(65);
+				// right_vesc.set_norm_position_target(115);
+
+				// Set to zero in order to determine offsets
+				left_vesc.set_norm_position_target(90.0);
+				right_vesc.set_norm_position_target(90.0);
 				//
 				// // high gain pid constants
 				left_vesc.update_vesc_position_pid_constants(0.05,0,0.0004);
@@ -271,11 +276,25 @@ void loop() {
 				// set low pid constant
 
 				// 15 deg from vertical
-				left_vesc.set_norm_position_target(75);
-				right_vesc.set_norm_position_target(105);
-				//
-				left_vesc.update_vesc_position_pid_constants(0.001,0,0.0001);
-				right_vesc.update_vesc_position_pid_constants(0.001,0,0.0001);
+				// left_vesc.set_norm_position_target(75);
+				// right_vesc.set_norm_position_target(105);
+
+				// Set to zero to find offsets
+				static float sinusoid_time;
+				sinusoid_time = ((float)millis()) / 1000.0;
+				static float PERIOD;
+				PERIOD = 5.0;
+				static float left_vesc_angle;
+				left_vesc_angle = sin(2*PI*sinusoid_time/PERIOD) * 35.0 + 10.0;
+				static float right_vesc_angle;
+				right_vesc_angle = sin(2*PI*sinusoid_time/PERIOD + PI/2) * 35.0 + 100.0;
+
+				left_vesc.set_norm_position_target(left_vesc_angle);
+				right_vesc.set_norm_position_target(right_vesc_angle);
+
+
+				left_vesc.update_vesc_position_pid_constants(0.03,0,0.0008);
+				right_vesc.update_vesc_position_pid_constants(0.03,0,0.0008);
 
 			  // AUTOMODE: transition to HOP_UP when leg retracted
 				break;

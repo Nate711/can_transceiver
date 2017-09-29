@@ -1,6 +1,12 @@
 #ifndef CONSTANTS_H
 #define CONSTANTS_H
 #include "Arduino.h"
+
+// 2000us period means 500hz
+// Send position commands at 200hz
+/*** 200 HZ ****/
+const int UPDATE_PERIOD =  5000; // us
+
 // built in led pin
 int led = 13;
 
@@ -23,18 +29,21 @@ const int8_t RM_CHANNEL_ID = 1;
 const float RIGHT_VESC_DOWN = 226;
 const float RIGHT_VESC_UP = 36;
 
-const float RIGHT_VESC_OFFSET = 306.0;
-const int RIGHT_VESC_DIRECTION = -1;
+// const float RIGHT_VESC_OFFSET = 306.0;
+// const int RIGHT_VESC_DIRECTION = -1;
+
+const float OPP_VESC_OFFSET = -108; // 108
+const int OPP_VESC_DIRECTION = -1;
 
 // K side motor
 // increases CCW when facing N side
 const float LEFT_VESC_DOWN = 140;
 const float LEFT_VESC_UP = 320;
 
-const float LEFT_VESC_OFFSET = 314.0;
-const int LEFT_VESC_DIRECTION = 1;
+// const float LEFT_VESC_OFFSET = 314.0;
+// const int LEFT_VESC_DIRECTION = 1;
 
-// 2000us period means 500hz
-const int UPDATE_PERIOD =  1000; // us
+const float BOOM_VESC_OFFSET = -210.0;
+const int BOOM_VESC_DIRECTION = 1;
 
 #endif
