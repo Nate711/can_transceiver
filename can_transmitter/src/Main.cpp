@@ -309,7 +309,7 @@ void loop() {
 				// right_vesc.set_norm_position_target(45.0);
 				// right_vesc.set_current(1.0);
 				// right_vesc.set_position(0.0);
-				right_vesc.set_position_pid_constants(0.04,0,0.0003,0.0);
+				// right_vesc.set_position_pid_constants(0.04,0,0.0003,0.0);
 
 			}
 
@@ -318,9 +318,9 @@ void loop() {
 				LM_current_command_sent = true;
 
 				// left_vesc.set_current(1.0);
-				// left_vesc.set_normalized_position_with_constants();
+				left_vesc.set_normalized_position_with_constants();
 				// left_vesc.set_position(0.0);
-				left_vesc.set_position_pid_constants(0.04,0,0.0003,0.0);
+				// left_vesc.set_position_pid_constants(0.04,0,0.0003,0.0);
 
 				// TODO: should also put max current in this message! then have full control
 			}

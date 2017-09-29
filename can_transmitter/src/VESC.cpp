@@ -167,7 +167,8 @@ void VESC::update_vesc_position_pid_constants(const float& kp, const float& ki, 
 }
 
 void VESC::set_position_pid_constants() {
-  set_position_pid_constants(vesc_kp, vesc_ki, vesc_kd, pos);
+  set_position_pid_constants(vesc_kp, vesc_ki, vesc_kd,
+    normalized_to_vesc_angle(normalized_position_target));
 }
 
 void VESC::set_position_pid_constants(float kp, float ki, float kd, float pos) {
@@ -180,11 +181,13 @@ void VESC::set_position_pid_constants(float kp, float ki, float kd, float pos) {
   buffer_append_int16(msg.buf,(int16_t)(ki*MULTIPLIER),&index);
   buffer_append_int16(msg.buf,(int16_t)(kd*MULTIPLIER),&index);
 
+
   // JANK AF ADDING POS TO CONSTANT COMMAND
   int POS_MULTIPLIER = 50;
   // Multiplying by 50 means resolution of 0.02 degrees, which is less than the
   // encoder resolution of 0.07 degrees
   buffer_append_int16(msg.buf,(int16_t)(pos*POS_MULTIPLIER),&index);
+
   /*
 	WACKO fix, doesn't work without the wait
 	*/
@@ -195,6 +198,7 @@ void VESC::set_position_pid_constants(float kp, float ki, float kd, float pos) {
 }
 
 void VESC::set_normalized_position_with_constants() {
+  // JUST USING SET POSITION PID CONSTANTS DOES NOT WORK
   if(update_pid_constants) {
     set_position_pid_constants();
   }
