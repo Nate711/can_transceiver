@@ -167,10 +167,10 @@ void VESC::update_vesc_position_pid_constants(const float& kp, const float& ki, 
 }
 
 void VESC::set_position_pid_constants() {
-  set_position_pid_constants(vesc_kp, vesc_ki, vesc_kd);
+  set_position_pid_constants(vesc_kp, vesc_ki, vesc_kd, pos);
 }
 
-void VESC::set_position_pid_constants(const float& kp, const float& ki, const float& kd) {
+void VESC::set_position_pid_constants(float kp, float ki, float kd, float pos) {
   CAN_message_t msg;
   int MULTIPLIER = 100000; // max valu is .3 for any value (2^15 / 100000)
   msg.id = controller_channel_ID | ((int32_t) CAN_PACKET_SET_P_PID_K<<8);
@@ -179,6 +179,12 @@ void VESC::set_position_pid_constants(const float& kp, const float& ki, const fl
   buffer_append_int16(msg.buf,(int16_t)(kp*MULTIPLIER),&index);
   buffer_append_int16(msg.buf,(int16_t)(ki*MULTIPLIER),&index);
   buffer_append_int16(msg.buf,(int16_t)(kd*MULTIPLIER),&index);
+
+  // JANK AF ADDING POS TO CONSTANT COMMAND
+  int POS_MULTIPLIER = 50;
+  // Multiplying by 50 means resolution of 0.02 degrees, which is less than the
+  // encoder resolution of 0.07 degrees
+  buffer_append_int16(msg.buf,(int16_t)(pos*POS_MULTIPLIER),&index);
   /*
 	WACKO fix, doesn't work without the wait
 	*/

@@ -17,6 +17,7 @@ private:
 
 	// VESC position pid constants
 	float vesc_kp=0,vesc_ki=0,vesc_kd=0;
+	float pos=0;
 
 	// Flag to tell if position pid constants need to be sent to VESC
 	bool update_pid_constants = true;
@@ -116,7 +117,8 @@ public:
 	 * @param ki [description]
 	 * @param kd [description]
 	 */
-	void update_vesc_position_pid_constants(const float& kp, const float& ki, const float& kd);
+	void update_vesc_position_pid_constants(const float& kp, const float& ki,
+		const float& kd);
 
 	/**
 	 * Sends a CAN message with the new pid constants to the VESC
@@ -124,7 +126,8 @@ public:
 	 * @param ki [description]
 	 * @param kd [description]
 	 */
-	void set_position_pid_constants(const float& kp, const float& ki, const float& kd);
+	void set_position_pid_constants(float kp, float ki, float kd,
+		float pos);
 
 	/**
 	 * Sends CAN message using stored pid constants to the VESC
