@@ -80,7 +80,7 @@ void print_status() {
 	if(last_print_debug > 100) {
 		last_print_debug -= 100;
 
-		if(last_printed_state != teensy_state
+		if(true || last_printed_state != teensy_state
 			|| (teensy_state == RUNNING && last_running_state != teensy_running_state)) {
 
 			last_printed_state = teensy_state;
@@ -111,18 +111,6 @@ void print_status() {
 					default:
 						break;
 
-					// case FLIGHT_A:
-					// 	Serial.println("FLIGHT_A");
-					// 	break;
-					// case FLIGHT_B:
-					// 	Serial.println("FLIGHT_B");
-					// 	break;
-					// case STANCE_A:
-					// 	Serial.println("STANCE_A");
-					// 	break;
-					// case STANCE_B:
-					// 	Serial.println("STANCE_B");
-					// 	break;
 					}
 					break;
 				}
@@ -231,7 +219,7 @@ void loop() {
 		// ESTOP: the e-stop button was pressed so stop sending current to the motors!
 		case ESTOP:
 			// Handle the ESTOP behavior: if it has been pressed or is currently pressed
-			// then send a zero current command over to the VESC and delay 500ms
+			// then send a zero current command over to the VESC and delay 200ms
 			right_vesc.set_current(0.0);
 			left_vesc.set_current(0.0);
 
@@ -248,23 +236,18 @@ void loop() {
 
 			process_CAN_messages();
 
-			// print_shit();
+			// Serial.println(millis());
 
 			// For now use only hop up and down states
 			switch(teensy_running_state) {
 			case HOP_UP:
 				// set target pid positions
-				// set high pid constants
-
-				// 25 deg from vertical
-				// left_vesc.set_norm_position_target(65);
-				// right_vesc.set_norm_position_target(115);
 
 				// Set to zero in order to determine offsets
 				left_vesc.set_norm_position_target(90.0);
 				right_vesc.set_norm_position_target(90.0);
-				//
-				// // high gain pid constants
+
+				// high gain pid constants
 				left_vesc.update_vesc_position_pid_constants(0.05,0,0.0004);
 				right_vesc.update_vesc_position_pid_constants(0.05,0,0.0004);
 
@@ -273,118 +256,42 @@ void loop() {
 
 			case HOP_DOWN:
 				// set target pid positions
-				// set low pid constant
 
-				// 15 deg from vertical
-				// left_vesc.set_norm_position_target(75);
-				// right_vesc.set_norm_position_target(105);
+				// Set to zero to find offset
+				left_vesc.set_norm_position_target(0.0);
+				right_vesc.set_norm_position_target(0.0);
 
-				// Set to zero to find offsets
-				static float sinusoid_time;
-				sinusoid_time = ((float)millis()) / 1000.0;
-				static float PERIOD;
-				PERIOD = 5.0;
-				static float left_vesc_angle;
-				left_vesc_angle = sin(2*PI*sinusoid_time/PERIOD) * 35.0 + 10.0;
-				static float right_vesc_angle;
-				right_vesc_angle = sin(2*PI*sinusoid_time/PERIOD + PI/2) * 35.0 + 100.0;
-
-				left_vesc.set_norm_position_target(left_vesc_angle);
-				right_vesc.set_norm_position_target(right_vesc_angle);
-
-
-				left_vesc.update_vesc_position_pid_constants(0.03,0,0.0008);
-				right_vesc.update_vesc_position_pid_constants(0.03,0,0.0008);
+				left_vesc.update_vesc_position_pid_constants(0.05,0,0.0008);
+				right_vesc.update_vesc_position_pid_constants(0.05,0,0.0008);
 
 			  // AUTOMODE: transition to HOP_UP when leg retracted
 				break;
-			/*
-			// case FLIGHT_A: // flight going up; leg behind
-			// 	// break;
-			// case FLIGHT_B: // flight going down; leg in front
-			//
-			// 	break;
-			// case STANCE_A: // stance going down; leg in front
-			// 	// break;
-			// case STANCE_B: // stance going up; leg behind
-			// break;
-			*/
-
 			default:
 				break;
-
 			}
+
+
 
 			/****** Send current messages to VESCs *******/
 			// Send position current commands at 1khz aka 1000 us per loop
 			// LM command should be sent halfway between RM commands
 			if(RM_current_command > UPDATE_PERIOD) {
 				RM_current_command = 0;
+
 				// Start of a new cycle, LM should be sent after PID_PERIOD/2 us
 				LM_current_command_sent = false;
 
-				// START right vesc commands
 				right_vesc.set_normalized_position_with_constants();
-				// right_vesc.set_norm_position_target(45.0);
-				// right_vesc.set_current(1.0);
-				// right_vesc.set_position(0.0);
-				// right_vesc.set_position_pid_constants(0.04,0,0.0003,0.0);
-
 			}
 
 			// This should execute halfway between every RM current command
 			if(RM_current_command > UPDATE_PERIOD/2 && !LM_current_command_sent) {
 				LM_current_command_sent = true;
 
-				// left_vesc.set_current(1.0);
 				left_vesc.set_normalized_position_with_constants();
-				// left_vesc.set_position(0.0);
-				// left_vesc.set_position_pid_constants(0.04,0,0.0003,0.0);
-
-				// TODO: should also put max current in this message! then have full control
 			}
 			/****** End of sending current messages to VESCs *******/
 
 			break;
-
-		/* OLD master code
-		// RUNNING state: do whatever PID control etc needs to be done
-		case RUNNING:
-			// print_status();
-			// check for estop
-			if(digitalReadFast(e_stop_pin) == LOW) {
-				teensy_state = ESTOP;
-				break; // redundant
-			} else {
-				// IMPORTANT
-				// read any jump commands
-				process_serial();
-
-				float last_read_angle;
-				int transmitter_ID;
-
-				// right_vesc.print_debug();
-				if(readAngleOverCAN(CANTransceiver,last_read_angle,transmitter_ID)) { // time to read is 9 us
-					if(transmitter_ID == RM_CHANNEL_ID) {
-
-						right_vesc.update_deg(last_read_angle); // 4 micros
-
-						// SOMETHING VERY Wrong with using has_read_angle logic
-
-						long then = micros();
-						right_vesc.pid_update(right_vesc_target); // 24 micros
-						loop_time = micros() - then;
-					}
-					if(transmitter_ID == LM_CHANNEL_ID) {
-
-						// left_vesc.set_current(0);
-						left_vesc.update_deg(last_read_angle);
-						left_vesc.pid_update(left_vesc_target);
-					}
-				}
-			}
-			break;
-			*/
 	}
-
 }
