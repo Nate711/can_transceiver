@@ -110,11 +110,9 @@ void print_status() {
 						break;
 					default:
 						break;
-
 					}
 					break;
 				}
-
 		}
 	}
 }
@@ -137,11 +135,15 @@ void process_serial() {
 		// Process each different command
 		switch(c) {
 			case 'w': // hop up state
-				teensy_running_state = HOP_UP;
+				left_vesc.set_norm_position_target(90.0);
+				right_vesc.set_norm_position_target(90.0);
 				break;
+
 			case 's': // hope down state
-				teensy_running_state = HOP_DOWN;
+				left_vesc.set_norm_position_target(0.0);
+				right_vesc.set_norm_position_target(0.0);
 				break;
+
 			case 'p': // prime for jump
 				left_vesc.set_norm_position_target(-45);
 				right_vesc.set_norm_position_target(-135);
@@ -229,48 +231,18 @@ void loop() {
 			break;
 
 		case RUNNING:
+			// Prints the status over serial every 100 ms
 			print_status();
 
 			// IMPORTANT: read any jump commands
 			process_serial();
 
+			// Process any CAN messages from the motor controllers
 			process_CAN_messages();
 
-			// Serial.println(millis());
-
-			// For now use only hop up and down states
-			switch(teensy_running_state) {
-			case HOP_UP:
-				// set target pid positions
-
-				// Set to zero in order to determine offsets
-				left_vesc.set_norm_position_target(90.0);
-				right_vesc.set_norm_position_target(90.0);
-
-				// high gain pid constants
-				left_vesc.update_vesc_position_pid_constants(0.05,0,0.0004);
-				right_vesc.update_vesc_position_pid_constants(0.05,0,0.0004);
-
-				// AUTOMODE: transition to HOP_DOWN when leg fully extended
-				break;
-
-			case HOP_DOWN:
-				// set target pid positions
-
-				// Set to zero to find offset
-				left_vesc.set_norm_position_target(0.0);
-				right_vesc.set_norm_position_target(0.0);
-
-				left_vesc.update_vesc_position_pid_constants(0.05,0,0.0008);
-				right_vesc.update_vesc_position_pid_constants(0.05,0,0.0008);
-
-			  // AUTOMODE: transition to HOP_UP when leg retracted
-				break;
-			default:
-				break;
-			}
-
-
+			// Set the stiff coefficients
+			left_vesc.update_vesc_position_pid_constants(0.05,0,0.0008);
+			right_vesc.update_vesc_position_pid_constants(0.05,0,0.0008);
 
 			/****** Send current messages to VESCs *******/
 			// Send position current commands at 1khz aka 1000 us per loop
