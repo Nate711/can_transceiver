@@ -54,17 +54,82 @@ private:
   elapsedMillis last_print_debug=0;
 	elapsedMillis print_w=0;
 
-	float vesc_to_normalized_angle(const float& raw_angle);
-	float normalized_to_vesc_angle(const float& normalized_angle);
+	float vesc_to_normalized_angle(float raw_angle);
+	float normalized_to_vesc_angle(float normalized_angle);
+
+	/**
+	 * Sends a CAN message to VESC to set the motor current
+	 * @param current : desired signed current
+	 */
+	void send_current(float current);
+
+	/**
+	 * Sends position CAN message to VESC given an absolute angle
+	 * @param pos [description]
+	 */
+	void send_position(float pos);
+
+	/**
+	 * Sends a CAN message with the new pid constants and position to the VESC
+	 * @param kp [description]
+	 * @param ki [description]
+	 * @param kd [description]
+	 * @param pos
+	 */
+	void send_position_pid_constants(float kp, float ki, float kd,
+		float pos);
+
 
 public:
   VESC(float encoder_offset1,
-            int encoder_direction1,
-            float max_current1,
-            float max_speed1,
-            float Kp, float Kd,
-            int8_t controller_channel_ID1,
-            FlexCAN& cantx);
+        int encoder_direction1,
+        float max_current1,
+        float max_speed1,
+        float Kp, float Kd,
+        int8_t controller_channel_ID1,
+        FlexCAN& cantx);
+
+	/**
+	 * Sends position CAN message to motor to update position hold command.
+	 * Currently only implements VESC-side position hold
+	 * @param deg normalized target angle in degrees
+	 */
+	void write(float deg);
+
+	/**
+	 * Sends CAN message to set current
+	 * @param current desired current in amps
+	 */
+	void write_current(float current);
+	/**
+	 * Sends CAN message to update position PID gains and position
+	 * @param kp P term gain
+	 * @param ki I term gain
+	 * @param kd D term gain
+	 * @param pos : normalized target position
+	 */
+	void write_pos_and_pid_gains(float kp, float ki,
+		float kd,float pos);
+
+	/**
+	 * Returns the last read normalized motor position in degrees. Note
+	 * that the motor position read is not the commanded position, but
+	 * the actual, last-read motor position
+	 * @return motor position
+	 */
+	float read();
+
+	/**
+	 * Sets up the vesc object to talk over this CAN ID channel
+	 * @param CANID : Which CAN ID to use for this communication channel
+	 */
+	void attach(int CANID);
+
+	/**
+	 * De-initializes the VESC object and sends a zero-current command to halt
+	 * the VESC
+	 */
+	void detach();
 
 	/**
 	 * Updates rotation state and calculates speed
@@ -72,89 +137,11 @@ public:
 	 */
   void update_deg(const float& deg);
 
-	/**
-	 * Gets the absolute angle
-	 * @return [description]
-	 */
-  float read_vesc_angle();
-
-	/**
-	 * Returns the speed of the motor. 'corrected' no longer means anything
-	 * @return speed of motor
-	 */
-	float read_corrected_degps();
-
   /**
    * Not implemented?
    * @param sleep_time [description]
    */
 	void reset(int sleep_time);
-
-	/**
-	 * Sends a CAN message to VESC to set the motor current
-	 * @param current [description]
-	 */
-  void set_current(const float& current);
-
-	/**
-	 * Setter for normalized position target variable. Holds on to the target so
-	 * you don't have to worry about making a variable in meain to set the target.
-	 * @param target
-	 */
-	void set_norm_position_target(float target);
-
-	/**
-	 * Getter for normalized position target variable. Holds on to the target so
-	 * you don't have to worry about making a variable in meain to set the target.
-	 * @param target
-	 */
-	float get_norm_position_target();
-
-	/**
-	 * Updates internal memory of vesc pid constants and sets flag to send CAN
-	 * message with new values.
-	 * @param kp [description]
-	 * @param ki [description]
-	 * @param kd [description]
-	 */
-	void update_vesc_position_pid_constants(const float& kp, const float& ki,
-		const float& kd);
-
-	/**
-	 * Sends a CAN message with the new pid constants to the VESC
-	 * @param kp [description]
-	 * @param ki [description]
-	 * @param kd [description]
-	 */
-	void set_position_pid_constants(float kp, float ki, float kd,
-		float pos);
-
-	/**
-	 * Sends CAN message using stored pid constants to the VESC
-	 */
-	void set_position_pid_constants();
-
-	/**
-	 * Sends position CAN message to VESC given a normalized angle
-	 * @param pos [description]
-	 */
-	void set_position_normalized(const float& pos);
-	/**
-	 * Uses private normalized target position variable
-	 */
-	void set_position_normalized();
-
-	/**
-	 * Sends position CAN message to VESC given an absolute angle
-	 * @param pos [description]
-	 */
-	void set_position(const float& pos);
-
-	/**
-	 * Sends CAN message to VESC with position and pid constants if pid constants
-	 * need updating.
-	 */
-	void set_normalized_position_with_constants();
 
 	/**
 	 * Uses teensy pid to send current command to VESC given a normalized

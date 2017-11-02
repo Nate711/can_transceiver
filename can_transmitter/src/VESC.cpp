@@ -2,12 +2,13 @@
 #include "utils.h"
 // #include <FlexCAN.h>
 
+/***** PRIVATE METHODS ******/
 /**
  * Convert a vesc raw angle to a normalized degree angle,
  * which are defined as the angle
  * from the horizontal to the motor with positive downward, to
  **/
-float VESC::vesc_to_normalized_angle(const float& raw_angle) {
+float VESC::vesc_to_normalized_angle(float raw_angle) {
   float normalized = raw_angle;
 
   // correct for encoder direction, ie if + angle is CW or CCW
@@ -29,7 +30,7 @@ float VESC::vesc_to_normalized_angle(const float& raw_angle) {
  * @param  normalized_angle [description]
  * @return                  [description]
  */
-float VESC::normalized_to_vesc_angle(const float& normalized_angle) {
+float VESC::normalized_to_vesc_angle(float normalized_angle) {
   float raw_angle = normalized_angle;
 
   // subtract offset
@@ -46,6 +47,87 @@ float VESC::normalized_to_vesc_angle(const float& normalized_angle) {
   return raw_angle;
 }
 
+/**
+ * Sends CAN position command to the VESC
+ * @param pos desired position, automatically normalizes it
+ */
+void VESC::send_position(float pos) {
+  float norm_pos = pos;
+  utils_norm_angle(norm_pos);
+
+  CAN_message_t msg;
+  int MULTIPLIER = 1000000;
+  msg.id = controller_channel_ID | ((int32_t) CAN_PACKET_SET_POS<<8);
+  msg.len = 8;
+  int32_t index = 0;
+  buffer_append_int32(msg.buf,(int32_t)(pos*MULTIPLIER),&index);
+  /*
+	WACKO fix, doesn't work without the wait
+	*/
+	long time = micros();
+	while(time - micros() < 1) {}
+
+	CANtx.write(msg);
+}
+
+/**
+ * Sends current command to the VESC
+ */
+void VESC::send_current(float current) {
+  CAN_message_t msg;
+  int MULTIPLIER = 1000;
+
+	// (VESC will accept all 255 ID messages)
+	// CAN_PACKET_SET_CURRENT byte goes on the left of the ID byte
+	msg.id = controller_channel_ID | ((int32_t)CAN_PACKET_SET_CURRENT << 8);
+	msg.len = 4; // 4 byte int
+
+	int32_t index=0;
+	buffer_append_int32(msg.buf, (int32_t)(current*MULTIPLIER), &index);
+
+  /*
+	WACKO fix, doesn't work without the wait
+	*/
+	long time = micros();
+	while(time - micros() < 1) {}
+
+	CANtx.write(msg);
+}
+
+/**
+ * Sends a CAN message with the new pid constants and position to the VESC
+ * @param kp
+ * @param ki
+ * @param kd
+ * @param pos
+ */
+void VESC::send_position_pid_constants(float kp, float ki, float kd, float pos) {
+  CAN_message_t msg;
+  int MULTIPLIER = 100000; // max valu is .3 for any value (2^15 / 100000)
+  msg.id = controller_channel_ID | ((int32_t) CAN_PACKET_SET_P_PID_K<<8);
+  msg.len = 8;
+  int32_t index = 0;
+  buffer_append_int16(msg.buf,(int16_t)(kp*MULTIPLIER),&index);
+  buffer_append_int16(msg.buf,(int16_t)(ki*MULTIPLIER),&index);
+  buffer_append_int16(msg.buf,(int16_t)(kd*MULTIPLIER),&index);
+
+
+  // JANK AF ADDING POS TO CONSTANT COMMAND
+  int POS_MULTIPLIER = 50;
+  // Multiplying by 50 means resolution of 0.02 degrees, which is less than the
+  // encoder resolution of 0.07 degrees
+  buffer_append_int16(msg.buf,(int16_t)(pos*POS_MULTIPLIER),&index);
+
+  /*
+	WACKO fix, doesn't work without the wait
+	*/
+	long time = micros();
+	while(time - micros() < 1) {}
+
+	CANtx.write(msg);
+}
+
+/***** PUBLIC METHODS ******/
 /**
  * Constructs VESC object with initial params
  * I dont understand member initializer lists :( but CANtx breaks without it
@@ -76,6 +158,59 @@ VESC::VESC(float encoder_offset1,
 }
 
 /**
+ * Sends position CAN message to motor to update position hold command.
+ * Currently only implements VESC-side position hold.
+ * @param deg normalized target angle in degrees
+ */
+void VESC::write(float deg) {
+  send_position(normalized_to_vesc_angle(deg));
+}
+
+/**
+ * Sends CAN message to set current
+ * @param current desired current in amps
+ */
+void VESC::write_current(float current) {
+  send_current(current);
+}
+
+/**
+ * Sends CAN message to update position PID gains and position
+ * @param kp P term gain
+ * @param ki I term gain
+ * @param kd D term gain
+ * @param pos : normalized target position
+ */
+void VESC::write_pos_and_pid_gains(float kp, float ki, float kd, float pos) {
+  send_position_pid_constants(kp, ki, kd, normalized_to_vesc_angle(pos));
+}
+
+/**
+ * Prints VESC object state
+ */
+void VESC::print_debug() {
+	if(last_print_debug > 100) {
+		last_print_debug = 0;
+
+		Serial.print("O: ");
+		Serial.print(pos_controller.get_command());
+		Serial.print(" \tEr: ");
+		Serial.print(pos_controller.get_error());
+		Serial.print(" \tEr.w:  ");
+		Serial.print(pos_controller.get_error_deriv());
+    Serial.print(" \tw: ");
+    Serial.print(true_degps);
+		Serial.print(" \tKp: ");
+		Serial.print(pos_controller.get_pterm());
+		Serial.print(" \tKd: ");
+		Serial.println(pos_controller.get_dterm());
+	}
+}
+
+
+
+/***** OLD ONBOARD PID CODE *******/
+/**
  * Compute PID output and send to VESC given a normalized angle set
  * point. Uses last given position values.
  * @param set_point normalized angle set point
@@ -93,7 +228,7 @@ void VESC::pid_update(const float& set_point) {
             pos_controller.compute_command(error,last_time_delta_micros);
 
   // FUCK EVERYTHINGGGGG COMPARING FLOATS DOESNT WORK
-  set_current(cur_command);
+  send_current(cur_command);
 }
 
 /**
@@ -133,152 +268,4 @@ void VESC::update_deg(const float& raw_deg) {
 
   // Update degree state
   vesc_angle = corrected;
-}
-
-/**
- * Returns the VESC object's last known knowledge of motor position
- */
-float VESC::read_vesc_angle() {
-  return vesc_angle;
-}
-
-float VESC::read_corrected_degps() {
-  return true_degps;
-}
-
-void VESC::set_norm_position_target(float target) {
-  normalized_position_target = target;
-}
-
-float VESC::get_norm_position_target() {
-  return normalized_position_target;
-}
-
-void VESC::update_vesc_position_pid_constants(const float& kp, const float& ki, const float& kd) {
-  if(vesc_kp == kp && vesc_ki == ki && vesc_kd == kd) {
-    // Nothing to do, same values as last time
-  } else {
-    // Update internal memory and set flag to send CAN message
-    vesc_kp = kp;
-    vesc_ki = ki;
-    vesc_kd = kd;
-    update_pid_constants = true;
-  }
-}
-
-void VESC::set_position_pid_constants() {
-  set_position_pid_constants(vesc_kp, vesc_ki, vesc_kd,
-    normalized_to_vesc_angle(normalized_position_target));
-}
-
-void VESC::set_position_pid_constants(float kp, float ki, float kd, float pos) {
-  CAN_message_t msg;
-  int MULTIPLIER = 100000; // max valu is .3 for any value (2^15 / 100000)
-  msg.id = controller_channel_ID | ((int32_t) CAN_PACKET_SET_P_PID_K<<8);
-  msg.len = 8;
-  int32_t index = 0;
-  buffer_append_int16(msg.buf,(int16_t)(kp*MULTIPLIER),&index);
-  buffer_append_int16(msg.buf,(int16_t)(ki*MULTIPLIER),&index);
-  buffer_append_int16(msg.buf,(int16_t)(kd*MULTIPLIER),&index);
-
-
-  // JANK AF ADDING POS TO CONSTANT COMMAND
-  int POS_MULTIPLIER = 50;
-  // Multiplying by 50 means resolution of 0.02 degrees, which is less than the
-  // encoder resolution of 0.07 degrees
-  buffer_append_int16(msg.buf,(int16_t)(pos*POS_MULTIPLIER),&index);
-
-  /*
-	WACKO fix, doesn't work without the wait
-	*/
-	long time = micros();
-	while(time - micros() < 1) {}
-
-	CANtx.write(msg);
-}
-
-void VESC::set_normalized_position_with_constants() {
-  // JUST USING SET POSITION PID CONSTANTS DOES NOT WORK
-  if(update_pid_constants) {
-    set_position_pid_constants();
-  }
-  set_position_normalized();
-}
-
-void VESC::set_position_normalized(const float& pos) {
-  set_position(normalized_to_vesc_angle(pos));
-}
-
-void VESC::set_position_normalized() {
-  set_position_normalized(normalized_position_target);
-}
-
-
-/**
-* Sends position command to the VESC
-**/
-/**
- * Sends CAN position command to the VESC
- * @param pos desired position, automatically normalizes it
- */
-void VESC::set_position(const float& pos) {
-  float norm_pos = pos;
-  utils_norm_angle(norm_pos);
-
-  CAN_message_t msg;
-  int MULTIPLIER = 1000000;
-  msg.id = controller_channel_ID | ((int32_t) CAN_PACKET_SET_POS<<8);
-  msg.len = 8;
-  int32_t index = 0;
-  buffer_append_int32(msg.buf,(int32_t)(pos*MULTIPLIER),&index);
-  /*
-	WACKO fix, doesn't work without the wait
-	*/
-	long time = micros();
-	while(time - micros() < 1) {}
-
-	CANtx.write(msg);
-}
-
-/**
- * Sends current command to the VESC
- */
-void VESC::set_current(const float& current) {
-  CAN_message_t msg;
-  int MULTIPLIER = 1000;
-
-	// (VESC will accept all 255 ID messages)
-	// CAN_PACKET_SET_CURRENT byte goes on the left of the ID byte
-	msg.id = controller_channel_ID | ((int32_t)CAN_PACKET_SET_CURRENT << 8);
-	msg.len = 4; // 4 byte int
-
-	int32_t index=0;
-	buffer_append_int32(msg.buf, (int32_t)(current*MULTIPLIER), &index);
-
-  /*
-	WACKO fix, doesn't work without the wait
-	*/
-	long time = micros();
-	while(time - micros() < 1) {}
-
-	CANtx.write(msg);
-}
-
-void VESC::print_debug() {
-	if(last_print_debug > 100) {
-		last_print_debug = 0;
-
-		Serial.print("O: ");
-		Serial.print(pos_controller.get_command());
-		Serial.print(" \tEr: ");
-		Serial.print(pos_controller.get_error());
-		Serial.print(" \tEr.w:  ");
-		Serial.print(pos_controller.get_error_deriv());
-    Serial.print(" \tw: ");
-    Serial.print(true_degps);
-		Serial.print(" \tKp: ");
-		Serial.print(pos_controller.get_pterm());
-		Serial.print(" \tKd: ");
-		Serial.println(pos_controller.get_dterm());
-	}
 }

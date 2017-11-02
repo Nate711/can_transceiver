@@ -122,9 +122,9 @@ void print_shit() {
 		last_print_shit -= 10;
 
 		// Serial.println(loop_time);
-		Serial.print(right_vesc.get_norm_position_target());
+		Serial.print(right_vesc.read());
 		Serial.print("\t");
-		Serial.println(left_vesc.get_norm_position_target());
+		Serial.println(left_vesc.read());
 	}
 }
 
@@ -134,6 +134,8 @@ void process_serial() {
 
 		// Process each different command
 		switch(c) {
+			// TODO : update how position commands are set
+			/*
 			case 'w': // hop up state
 				left_vesc.set_norm_position_target(90.0);
 				right_vesc.set_norm_position_target(90.0);
@@ -164,6 +166,7 @@ void process_serial() {
 				right_vesc.set_norm_position_target(90);
 			default:
 				break;
+				*/
 		}
 		// Only read the last byte in the buffer
 		Serial.clear();
@@ -222,8 +225,8 @@ void loop() {
 		case ESTOP:
 			// Handle the ESTOP behavior: if it has been pressed or is currently pressed
 			// then send a zero current command over to the VESC and delay 200ms
-			right_vesc.set_current(0.0);
-			left_vesc.set_current(0.0);
+			right_vesc.write_current(0.0);
+			left_vesc.write_current(0.0);
 
 			print_status();
 			delay(200);
@@ -240,9 +243,6 @@ void loop() {
 			// Process any CAN messages from the motor controllers
 			process_CAN_messages();
 
-			// Set the stiff coefficients
-			left_vesc.update_vesc_position_pid_constants(0.05,0,0.0008);
-			right_vesc.update_vesc_position_pid_constants(0.05,0,0.0008);
 
 			/****** Send current messages to VESCs *******/
 			// Send position current commands at 1khz aka 1000 us per loop
@@ -253,14 +253,17 @@ void loop() {
 				// Start of a new cycle, LM should be sent after PID_PERIOD/2 us
 				LM_current_command_sent = false;
 
-				right_vesc.set_normalized_position_with_constants();
+				// Set the PID constants and position
+				right_vesc.write_pos_and_pid_gains(0.05, 0, 0.0005, 0.0);
+
 			}
 
 			// This should execute halfway between every RM current command
 			if(RM_current_command > UPDATE_PERIOD/2 && !LM_current_command_sent) {
 				LM_current_command_sent = true;
 
-				left_vesc.set_normalized_position_with_constants();
+				// Set the PID constants and position
+				left_vesc.write_pos_and_pid_gains(0.05, 0, 0.0005, 0.0);
 			}
 			/****** End of sending current messages to VESCs *******/
 
