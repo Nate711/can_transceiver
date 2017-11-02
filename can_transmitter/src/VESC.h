@@ -11,16 +11,10 @@
 
 class VESC {
 private:
-	// Position target used for either on-teensy pos control (not yet implemented)
-	// or for on-vesc position control
-	float normalized_position_target;
-
 	// VESC position pid constants
 	float vesc_kp=0,vesc_ki=0,vesc_kd=0;
 	float pos=0;
 
-	// Flag to tell if position pid constants need to be sent to VESC
-	bool update_pid_constants = true;
 
   // Holds time in micros of the last time the object got an angle measurement
   // It's important that this time is consistent
@@ -54,20 +48,30 @@ private:
   elapsedMillis last_print_debug=0;
 	elapsedMillis print_w=0;
 
+	/**
+	 * Converts an angle in the vesc encoder reference frame to a normalized angle
+	 * @param  raw_angle [description]
+	 * @return           [description]
+	 */
 	float vesc_to_normalized_angle(float raw_angle);
+	/**
+	 * Converts an angle in the robot frame to an angle in the vesc encoder frame
+	 * @param  raw_angle [description]
+	 * @return           [description]
+	 */
 	float normalized_to_vesc_angle(float normalized_angle);
 
 	/**
 	 * Sends a CAN message to VESC to set the motor current
 	 * @param current : desired signed current
 	 */
-	void send_current(float current);
+	void _send_current(float current);
 
 	/**
 	 * Sends position CAN message to VESC given an absolute angle
 	 * @param pos [description]
 	 */
-	void send_position(float pos);
+	void _send_position(float pos);
 
 	/**
 	 * Sends a CAN message with the new pid constants and position to the VESC
@@ -76,18 +80,16 @@ private:
 	 * @param kd [description]
 	 * @param pos
 	 */
-	void send_position_pid_constants(float kp, float ki, float kd,
+	void _send_position_pid_constants(float kp, float ki, float kd,
 		float pos);
 
 
 public:
-  VESC(float encoder_offset1,
-        int encoder_direction1,
-        float max_current1,
-        float max_speed1,
-        float Kp, float Kd,
-        int8_t controller_channel_ID1,
-        FlexCAN& cantx);
+	/**
+	 * Constructor. Sets the cantx object and calls constructor
+	 * @param cantx : reference to CAN object
+	 */
+  VESC(FlexCAN& cantx);
 
 	/**
 	 * Sends position CAN message to motor to update position hold command.
@@ -123,7 +125,8 @@ public:
 	 * Sets up the vesc object to talk over this CAN ID channel
 	 * @param CANID : Which CAN ID to use for this communication channel
 	 */
-	void attach(int CANID);
+	void attach(int CANID, float _encoder_offset, int _encoder_direction,
+		float _max_current);
 
 	/**
 	 * De-initializes the VESC object and sends a zero-current command to halt
@@ -135,7 +138,7 @@ public:
 	 * Updates rotation state and calculates speed
 	 * @param deg absolute encoder angle sent over CAN
 	 */
-  void update_deg(const float& deg);
+  void update_angle(float angle);
 
   /**
    * Not implemented?
@@ -144,7 +147,7 @@ public:
 	void reset(int sleep_time);
 
 	/**
-	 * Uses teensy pid to send current command to VESC given a normalized
+	 * Uses teensy-based pid to send current command to VESC given a normalized
 	 * angle target
 	 * @param set_point [description]
 	 */

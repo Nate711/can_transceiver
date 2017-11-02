@@ -7,8 +7,8 @@
 #include "globals.h"
 
 /**
- * Check and read rotor angle over CAN
- * Returns true and stores value if message received, otherwise ret false
+ * Check for and read motor angles over CAN
+ * Returns true and stores value if message received, otherwise return false
  **/
 bool readAngleOverCAN(FlexCAN& CANrx, float& last_angle_received, int& transmitter_ID) {
 	// NOTE: will parse thru multiple angles if >1 messages received btn loops
@@ -182,10 +182,10 @@ void process_CAN_messages() {
 	if(readAngleOverCAN(CANTransceiver, last_read_angle, transmitter_ID)) {
 		switch(transmitter_ID) {
 			case RM_CHANNEL_ID:
-				right_vesc.update_deg(last_read_angle);
+				right_vesc.update_angle(last_read_angle);
 				break;
 			case LM_CHANNEL_ID:
-				left_vesc.update_deg(last_read_angle);
+				left_vesc.update_angle(last_read_angle);
 				break;
 		}
 	}
@@ -202,6 +202,18 @@ void setup() {
 	digitalWrite(led, HIGH);
   delay(1000);
   Serial.println("CAN Transmitter Initialized");
+
+
+	// Initialize VESC objects
+	left_vesc.attach(LM_CHANNEL_ID,
+									BOOM_VESC_OFFSET,
+									BOOM_VESC_DIRECTION,
+									MAX_CURRENT);
+
+	right_vesc.attach(RM_CHANNEL_ID,
+										OPP_VESC_OFFSET,
+										OPP_VESC_DIRECTION,
+										MAX_CURRENT);
 }
 
 void loop() {
@@ -221,7 +233,7 @@ void loop() {
 			delay(500);
 			break;
 
-		// ESTOP: the e-stop button was pressed so stop sending current to the motors!
+		// ESTOP state: the e-stop button was pressed so stop sending current to the motors!
 		case ESTOP:
 			// Handle the ESTOP behavior: if it has been pressed or is currently pressed
 			// then send a zero current command over to the VESC and delay 200ms
@@ -233,6 +245,7 @@ void loop() {
 
 			break;
 
+		// RUNNING state: executes motor commands
 		case RUNNING:
 			// Prints the status over serial every 100 ms
 			print_status();

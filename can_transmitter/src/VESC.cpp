@@ -8,6 +8,11 @@
  * which are defined as the angle
  * from the horizontal to the motor with positive downward, to
  **/
+/**
+* Converts an angle in the vesc encoder reference frame to a normalized angle
+* @param  raw_angle [description]
+* @return           [description]
+*/
 float VESC::vesc_to_normalized_angle(float raw_angle) {
   float normalized = raw_angle;
 
@@ -26,9 +31,9 @@ float VESC::vesc_to_normalized_angle(float raw_angle) {
 }
 
 /**
- * Converts normalized angle to raw vesc angle
- * @param  normalized_angle [description]
- * @return                  [description]
+ * Converts an angle in the robot frame to an angle in the vesc encoder frame
+ * @param  raw_angle [description]
+ * @return           [description]
  */
 float VESC::normalized_to_vesc_angle(float normalized_angle) {
   float raw_angle = normalized_angle;
@@ -51,7 +56,7 @@ float VESC::normalized_to_vesc_angle(float normalized_angle) {
  * Sends CAN position command to the VESC
  * @param pos desired position, automatically normalizes it
  */
-void VESC::send_position(float pos) {
+void VESC::_send_position(float pos) {
   float norm_pos = pos;
   utils_norm_angle(norm_pos);
 
@@ -73,7 +78,7 @@ void VESC::send_position(float pos) {
 /**
  * Sends current command to the VESC
  */
-void VESC::send_current(float current) {
+void VESC::_send_current(float current) {
   CAN_message_t msg;
   int MULTIPLIER = 1000;
 
@@ -101,7 +106,7 @@ void VESC::send_current(float current) {
  * @param kd
  * @param pos
  */
-void VESC::send_position_pid_constants(float kp, float ki, float kd, float pos) {
+void VESC::_send_position_pid_constants(float kp, float ki, float kd, float pos) {
   CAN_message_t msg;
   int MULTIPLIER = 100000; // max valu is .3 for any value (2^15 / 100000)
   msg.id = controller_channel_ID | ((int32_t) CAN_PACKET_SET_P_PID_K<<8);
@@ -132,22 +137,11 @@ void VESC::send_position_pid_constants(float kp, float ki, float kd, float pos) 
  * Constructs VESC object with initial params
  * I dont understand member initializer lists :( but CANtx breaks without it
  */
-VESC::VESC(float encoder_offset1,
-          int encoder_direction1,
-          float max_current1,
-          float max_speed1,
-          float Kp, float Kd,
-          int8_t controller_channel_ID1,
-          FlexCAN& cantx) : CANtx(cantx), pos_controller(Kp,Kd){
-
-  encoder_offset = encoder_offset1;
-  encoder_direction = encoder_direction1;
-
-  controller_channel_ID = controller_channel_ID1;
-
-  max_current = max_current1;
-  max_speed = max_speed1;
-
+ /**
+  * Constructor. Sets the cantx object and calls its constructor
+  * @param cantx : reference to CAN object
+  */
+VESC::VESC(FlexCAN& cantx) : CANtx(cantx), pos_controller(0,0){
   CANtx = cantx;
 
   // the first time_delta will be large and will give small deg per sec which is ok
@@ -158,12 +152,27 @@ VESC::VESC(float encoder_offset1,
 }
 
 /**
+ * Sets up the vesc object to talk over this CAN ID channel
+ * @param CANID              integer, channel ID
+ * @param _encoder_offset    float, encoder offset
+ * @param _encoder_direction int
+ * @param _max_current       float, maximum current to send
+ */
+void VESC::attach(int CANID, float _encoder_offset, int _encoder_direction, float _max_current) {
+  encoder_offset = _encoder_offset;
+  encoder_direction = _encoder_direction;
+  max_current = _max_current;
+
+  controller_channel_ID = CANID;
+}
+
+/**
  * Sends position CAN message to motor to update position hold command.
  * Currently only implements VESC-side position hold.
  * @param deg normalized target angle in degrees
  */
 void VESC::write(float deg) {
-  send_position(normalized_to_vesc_angle(deg));
+  _send_position(normalized_to_vesc_angle(deg));
 }
 
 /**
@@ -171,7 +180,7 @@ void VESC::write(float deg) {
  * @param current desired current in amps
  */
 void VESC::write_current(float current) {
-  send_current(current);
+  _send_current(current);
 }
 
 /**
@@ -182,7 +191,48 @@ void VESC::write_current(float current) {
  * @param pos : normalized target position
  */
 void VESC::write_pos_and_pid_gains(float kp, float ki, float kd, float pos) {
-  send_position_pid_constants(kp, ki, kd, normalized_to_vesc_angle(pos));
+  _send_position_pid_constants(kp, ki, kd, normalized_to_vesc_angle(pos));
+}
+
+/**
+ * Updates the VESC objects knowledge of the motor angle
+ * Takes between 4 and 5 us when using the while loop-based normalize
+ * angle function
+ *
+ * @param raw_deg : measured position in vesc encoder frame. degrees
+ * automatically normalizes the given angle (no > 180deg moves)
+ */
+void VESC::update_angle(float angle) {
+  unsigned long now_time = micros();
+
+  float corrected = angle;
+
+  // 26 us without this line, 31 with this line = 5 us time
+  utils_norm_angle(corrected);
+
+  // Compute time since last angle update and
+  last_time_delta_micros = now_time - time_last_angle_read;
+  // POTENTIAL PROBLEM: if the main loop calls update_angle with the same angle
+  // at different times then the VESC object will think the speed is 0
+  time_last_angle_read = now_time;
+
+
+  // Compute velocity in deg per s
+  // This computation is subject to noise!
+  // 37-38 us loop time
+  // this line takes 6-8 us
+  if(last_time_delta_micros==0) last_time_delta_micros = 1;
+
+  true_degps = (int)(1000000*utils_angle_difference(corrected,vesc_angle)) /
+                                        (int)(last_time_delta_micros);
+
+
+  // 38-39 us loop time
+  // true_degps = utils_angle_difference(corrected,true_deg) /
+  //                                     (last_time_delta/1000000.0);
+
+  // Update angle state
+  vesc_angle = corrected;
 }
 
 /**
@@ -228,44 +278,5 @@ void VESC::pid_update(const float& set_point) {
             pos_controller.compute_command(error,last_time_delta_micros);
 
   // FUCK EVERYTHINGGGGG COMPARING FLOATS DOESNT WORK
-  send_current(cur_command);
-}
-
-/**
- * Updates the VESC objects knowledge of the motor angle
- * Takes between 4 and 5 us with while loop norm angle
- * @param raw_deg measured position in raw vesc angle coordinates.
- * automatically normalizes the given angle (no > 180deg moves)
- */
-void VESC::update_deg(const float& raw_deg) {
-  unsigned long now_time = micros();
-
-  float corrected = raw_deg;
-
-  // 26 us without this line, 31 with this line = 5 us time
-  utils_norm_angle(corrected);
-
-  // Compute time since last deg update and
-  last_time_delta_micros = now_time - time_last_angle_read;
-  // POTENTIAL PROBLEM: if the main loop calls update_deg with the same angle
-  // at different times then the VESC object will think the speed is 0
-  time_last_angle_read = now_time;
-
-
-  // Compute velocity in deg per s
-  // This computation is subject to noise!
-  // 37-38 us loop time
-  // this line takes 6-8 us
-  if(last_time_delta_micros==0) last_time_delta_micros = 1;
-
-  true_degps = (int)(1000000*utils_angle_difference(corrected,vesc_angle)) /
-                                        (int)(last_time_delta_micros);
-
-
-  // 38-39 us loop time
-  // true_degps = utils_angle_difference(corrected,true_deg) /
-  //                                     (last_time_delta/1000000.0);
-
-  // Update degree state
-  vesc_angle = corrected;
+  _send_current(cur_command);
 }
