@@ -191,6 +191,25 @@ void VESC::write_pos_and_pid_gains(float kp, float ki, float kd, float pos) {
 }
 
 /**
+   * Returns the last read normalized motor position in degrees. Note
+   * that the motor position read is not the commanded position, but
+   * the actual, last-read motor position
+   * @return motor position
+   */
+float VESC::read() {
+  return vesc_to_normalized_angle(vesc_angle);
+}
+
+/**
+ * De-initializes the VESC object and sends a zero-current command to halt
+ * the VESC
+ */
+void VESC::detach() {
+  // Tell motor to stop
+  _send_current(0.0);
+}
+
+/**
  * Updates the VESC objects knowledge of the motor angle
  * Takes between 4 and 5 us when using the while loop-based normalize
  * angle function
@@ -255,7 +274,8 @@ void VESC::print_debug() {
 
 
 
-/***** OLD ONBOARD PID CODE *******/
+/***** OLD CODE FOR ONBOARD PID POSITION CONTROL *******/
+
 /**
  * Compute PID output and send to VESC given a normalized angle set
  * point. Uses last given position values.

@@ -140,11 +140,13 @@ public:
 	 */
   void update_angle(float angle);
 
-  /**
-   * Not implemented?
-   * @param sleep_time [description]
-   */
-	void reset(int sleep_time);
+	/**
+	 * Prints VESC object state
+	 */
+  void print_debug();
+
+
+  /***** OLD CODE FOR ONBOARD PID POSITION CONTROL *******/
 
 	/**
 	 * Uses teensy-based pid to send current command to VESC given a normalized
@@ -159,10 +161,7 @@ public:
 	 */
   void pid_update(const float& set_point);
 
-	/**
-	 * Prints VESC object state
-	 */
-  void print_debug();
+
 };
 
 #endif
