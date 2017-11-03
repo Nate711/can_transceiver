@@ -3,11 +3,7 @@
 // #include <FlexCAN.h>
 
 /***** PRIVATE METHODS ******/
-/**
- * Convert a vesc raw angle to a normalized degree angle,
- * which are defined as the angle
- * from the horizontal to the motor with positive downward, to
- **/
+
 /**
 * Converts an angle in the vesc encoder reference frame to a normalized angle
 * @param  raw_angle [description]
